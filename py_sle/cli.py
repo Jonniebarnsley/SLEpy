@@ -62,9 +62,9 @@ Examples:
         help="Use parallel computation with dask"
     )
     parser.add_argument(
-        "--no-progress",
+        "-q", "--quiet",
         action="store_true",
-        help="Disable progress bar display"
+        help="Suppress all output and progress bars"
     )
     
     # Physical parameters
@@ -151,7 +151,7 @@ def main(args=None):
         rho_ocean=args.rho_ocean,
         rho_water=args.rho_water,
         ocean_area=args.ocean_area,
-        show_progress=not args.no_progress,
+        quiet=args.quiet,
     )
     
     # Configure dask
@@ -168,19 +168,20 @@ def main(args=None):
             calculator=calculator,
             parallel=args.parallel,
             dask_config=dask_config,
-            show_progress=not args.no_progress,
+            quiet=args.quiet,
         ) as processor:
             
-            print("Processing ensemble...")
-            print(f"Thickness dir: {thickness_dir}")
-            print(f"Z_base dir: {z_base_dir}")
-            if mask_file:
-                print(f"Basin mask: {mask_file}")
-            print(f"Output: {output_file}")
-            print(f"Parallel: {args.parallel}")
-            
-            if args.parallel:
-                print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
+            if not args.quiet:
+                print("Processing ensemble...")
+                print(f"Thickness dir: {thickness_dir}")
+                print(f"Z_base dir: {z_base_dir}")
+                if mask_file:
+                    print(f"Basin mask: {mask_file}")
+                print(f"Output: {output_file}")
+                print(f"Parallel: {args.parallel}")
+                
+                if args.parallel:
+                    print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
             
             # Calculate SLC
             results = processor.process_ensemble(
@@ -196,11 +197,12 @@ def main(args=None):
                 overwrite=args.overwrite,
             )
             
-            print(f"✓ Results saved to {output_file}")
-            print(f"  Ensemble size: {results.sizes['run']} runs")
-            print(f"  Time steps: {results.sizes['time']} steps")
-            if 'basin' in results.dims:
-                print(f"  Basins: {results.sizes['basin']} basins")
+            if not args.quiet:
+                print(f"✓ Results saved to {output_file}")
+                print(f"  Ensemble size: {results.sizes['run']} runs")
+                print(f"  Time steps: {results.sizes['time']} steps")
+                if 'basin' in results.dims:
+                    print(f"  Basins: {results.sizes['basin']} basins")
                 
     except Exception as e:
         print(f"Error: {e}")

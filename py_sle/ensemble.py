@@ -29,8 +29,8 @@ class EnsembleProcessor:
         Whether to use parallel computation with dask
     dask_config : dict, optional
         Dask configuration parameters
-    show_progress : bool, optional
-        Whether to show progress bar during processing (default: True)
+    quiet : bool, optional
+        Whether to suppress all output and progress bars (default: False)
     """
     
     def __init__(
@@ -38,12 +38,12 @@ class EnsembleProcessor:
         calculator: Optional[SLCCalculator] = None,
         parallel: bool = True,
         dask_config: dict = None,
-        show_progress: bool = True,
+        quiet: bool = False,
     ):
         self.calculator = calculator or SLCCalculator()
         self.parallel = parallel
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
-        self.show_progress = show_progress
+        self.quiet = quiet
         self._cluster = None
         self._client = None
         
@@ -102,8 +102,8 @@ class EnsembleProcessor:
         timeseries = []
         
         for i, (thk_file, zb_file) in enumerate(zip(thickness_files, z_base_files), 1):
-            # Print progress if enabled
-            if self.show_progress:
+            # Print progress if not quiet
+            if not self.quiet:
                 print(f"Processing ensemble run {i}/{len(thickness_files)}: {thk_file.stem}")
             
             # Load and prepare data
@@ -122,7 +122,7 @@ class EnsembleProcessor:
 
         
         # Print final status
-        if self.show_progress:
+        if not self.quiet:
             print(f"Completed processing {len(timeseries)} ensemble runs")
             
         # Combine into ensemble
