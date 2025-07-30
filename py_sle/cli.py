@@ -18,10 +18,10 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Basic usage
-  goelzer-slc thickness/ z_base/ output.nc --parallel
+  goelzer-slc thickness/ z_base/ output.nc
   
   # With basin mask
-  goelzer-slc thickness/ z_base/ output.nc --mask basins.nc --parallel
+  goelzer-slc thickness/ z_base/ output.nc --mask basins.nc
   
   # Custom parameters
   goelzer-slc thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
@@ -57,11 +57,6 @@ Examples:
         help="Overwrite output file if it exists"
     )
     parser.add_argument(
-        "--parallel",
-        action="store_true",
-        help="Use parallel computation with dask"
-    )
-    parser.add_argument(
         "-q", "--quiet",
         action="store_true",
         help="Suppress all output and progress bars"
@@ -95,7 +90,7 @@ Examples:
     )
     
     # Dask configuration
-    dask_group = parser.add_argument_group("Parallel computation")
+    dask_group = parser.add_argument_group("Dask configuration")
     dask_group.add_argument(
         "--workers",
         type=int,
@@ -166,7 +161,6 @@ def main(args=None):
     try:
         with EnsembleProcessor(
             calculator=calculator,
-            parallel=args.parallel,
             dask_config=dask_config,
             quiet=args.quiet,
         ) as processor:
@@ -178,10 +172,7 @@ def main(args=None):
                 if mask_file:
                     print(f"Basin mask: {mask_file}")
                 print(f"Output: {output_file}")
-                print(f"Parallel: {args.parallel}")
-                
-                if args.parallel:
-                    print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
+                print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
             
             # Calculate SLC
             results = processor.process_ensemble(

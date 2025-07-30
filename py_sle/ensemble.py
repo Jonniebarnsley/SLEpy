@@ -19,14 +19,12 @@ class EnsembleProcessor:
     Process ensembles of ice sheet model runs to calculate sea level contributions.
     
     This class handles the orchestration of SLC calculations across multiple
-    model runs, with support for parallel computation using dask.
+    model runs using parallel computation with dask.
     
     Parameters
     ----------
     calculator : SLCCalculator, optional
         SLC calculator instance. If None, creates default calculator
-    parallel : bool, optional
-        Whether to use parallel computation with dask
     dask_config : dict, optional
         Dask configuration parameters
     quiet : bool, optional
@@ -36,21 +34,18 @@ class EnsembleProcessor:
     def __init__(
         self,
         calculator: Optional[SLCCalculator] = None,
-        parallel: bool = True,
         dask_config: dict = None,
         quiet: bool = False,
     ):
         self.calculator = calculator or SLCCalculator()
-        self.parallel = parallel
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
         self.quiet = quiet
         self._cluster = None
         self._client = None
         
     def __enter__(self):
-        """Context manager entry - set up dask cluster if needed."""
-        if self.parallel:
-            self._setup_dask_cluster()
+        """Context manager entry - set up dask cluster."""
+        self._setup_dask_cluster()
         return self
         
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -165,10 +160,9 @@ class EnsembleProcessor:
         thickness = thk_ds.thickness if "thickness" in thk_ds else thk_ds[list(thk_ds.data_vars)[0]]
         z_base = zb_ds.Z_base if "Z_base" in zb_ds else zb_ds[list(zb_ds.data_vars)[0]]
         
-        # Apply chunking if parallel processing is enabled
-        if self.parallel:
-            thickness = prepare_chunked_data(thickness, chunks, self.parallel)
-            z_base = prepare_chunked_data(z_base, chunks, self.parallel)
+        # Apply chunking for parallel processing
+        thickness = prepare_chunked_data(thickness, chunks, True)
+        z_base = prepare_chunked_data(z_base, chunks, True)
         
         return thickness, z_base
         

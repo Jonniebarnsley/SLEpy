@@ -25,8 +25,8 @@ DEFAULT_CHUNKS = {
 
 # Default worker configuration for dask
 DEFAULT_DASK_CONFIG = {
-    "n_workers": 2,
-    "threads_per_worker": 1,
-    "memory_limit": "4GB",
+    "n_workers": 4,
+    "threads_per_worker": 2,
+    "memory_limit": "2GB",
     "dashboard_address": None,
 }
