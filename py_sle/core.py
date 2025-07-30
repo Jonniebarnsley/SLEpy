@@ -5,13 +5,7 @@ Core sea level contribution calculations based on Goelzer et al. (2020).
 from typing import Dict
 import numpy as np
 from xarray import DataArray
-
-try:
-    from dask.diagnostics import ProgressBar
-    from dask.distributed import progress
-    DASK_AVAILABLE = True
-except ImportError:
-    DASK_AVAILABLE = False
+from dask.distributed import progress
 
 from .constants import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFIG
 from .utils import validate_input_data
@@ -156,7 +150,8 @@ class SLCCalculator:
         })
         
         # Single compute step with progress tracking
-        if self.show_progress and DASK_AVAILABLE:
+        if self.show_progress:
+            print("Computing sea level contribution (all components)...")
             
             # Check if we're using distributed scheduler
             try:
@@ -168,9 +163,9 @@ class SLCCalculator:
                 slc_total = slc_total.compute()
                 
             except ValueError:
-                # Use ProgressBar for threaded/synchronous scheduler
-                with ProgressBar():
-                    slc_total = slc_total.compute()
+                # No distributed scheduler available, compute without progress bar
+                print("  (No distributed scheduler detected - computing without progress bar)")
+                slc_total = slc_total.compute()
         else:
             # Compute without progress tracking
             slc_total = slc_total.compute()
