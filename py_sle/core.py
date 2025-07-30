@@ -28,8 +28,8 @@ class SLCCalculator:
         Density of freshwater in kg/m³
     ocean_area : float, optional
         Surface area of the ocean in m²
-    show_progress : bool, optional
-        Whether to show progress bar during processing (default: False)
+    quiet : bool, optional
+        Whether to suppress all output and progress bars (default: False)
     dask_config : dict, optional
         Dask configuration parameters
         
@@ -44,14 +44,14 @@ class SLCCalculator:
         rho_ocean: float = None, 
         rho_water: float = None,
         ocean_area: float = None,
-        show_progress: bool = False,
+        quiet: bool = False,
         dask_config: dict = None,
     ):
         self.rho_ice = rho_ice if rho_ice is not None else DEFAULT_DENSITIES["ice"]
         self.rho_ocean = rho_ocean if rho_ocean is not None else DEFAULT_DENSITIES["ocean"] 
         self.rho_water = rho_water if rho_water is not None else DEFAULT_DENSITIES["water"]
         self.ocean_area = ocean_area if ocean_area is not None else DEFAULT_OCEAN_AREA
-        self.show_progress = show_progress
+        self.quiet = quiet
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
         self._cluster = None
         self._client = None
@@ -123,13 +123,13 @@ class SLCCalculator:
         # Fill NaNs in thickness
         thickness = thickness.fillna(0)
         
-        # Get pixel area parameters
-        dx, k = self._get_pixel_parameters(thickness)
+        # Get grid cell area
+        cell_area = self._get_grid_cell_area(thickness)
         
         # Calculate all components lazily (no intermediate compute calls)
-        slc_af = self._calculate_volume_above_floatation(thickness, z_base, dx, k)
-        slc_pov = self._calculate_potential_ocean_volume(z_base, dx, k)
-        slc_den = self._calculate_density_correction(thickness, dx, k)
+        slc_af = self._calculate_volume_above_floatation(thickness, z_base, cell_area)
+        slc_pov = self._calculate_potential_ocean_volume(z_base, cell_area)
+        slc_den = self._calculate_density_correction(thickness, cell_area)
         
         # Sum all components together (still lazy computation)
         slc_total = slc_af + slc_pov + slc_den
@@ -141,8 +141,7 @@ class SLCCalculator:
         })
         
         # Single compute step with progress tracking
-        if self.show_progress:
-
+        if not self.quiet:
             from dask.distributed import get_client
             get_client()  # Just check if distributed scheduler is available
             # Use distributed progress for distributed scheduler
@@ -151,13 +150,13 @@ class SLCCalculator:
             slc_total = slc_total.compute()
 
         else:
-            # Compute without progress tracking
+            # Compute without output or progress tracking
             slc_total = slc_total.compute()
         
         return slc_total
         
-    def _get_pixel_parameters(self, thickness: DataArray) -> tuple[float, float]:
-        """Get pixel width and area scale factor."""
+    def _get_grid_cell_area(self, thickness: DataArray) -> float:
+        """Get area of each grid cell in m²."""
         x = thickness.x
         
         # Handle single pixel case
@@ -170,14 +169,16 @@ class SLCCalculator:
         from .utils import scale_factor
         k = scale_factor(thickness, sgn=-1)  # Antarctic
         
-        return dx, k
+        # Grid cell area
+        cell_area = dx**2 / k**2
+        
+        return cell_area
         
     def _calculate_volume_above_floatation(
         self, 
         thickness: DataArray, 
         z_base: DataArray, 
-        dx: float, 
-        k: float
+        cell_area: float, 
     ) -> DataArray:
         """Calculate sea level contribution from volume above floatation."""
         # Use standard vectorized calculation (relies on dask for chunking)
@@ -189,7 +190,7 @@ class SLCCalculator:
         v_af = (
             grounded_thickness + 
             np.minimum(grounded_z_base, 0) * self.rho_ocean / self.rho_ice
-        ) * dx**2 / k**2
+        ) * cell_area
         
         # Sea level contribution (relative to first time step)
         slc_af = -(v_af - v_af.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
@@ -199,11 +200,10 @@ class SLCCalculator:
     def _calculate_potential_ocean_volume(
         self, 
         z_base: DataArray, 
-        dx: float, 
-        k: float
+        cell_area: float, 
     ) -> DataArray:
         """Calculate sea level contribution from potential ocean volume."""
-        v_pov = np.maximum(-z_base, 0) * dx**2 / k**2
+        v_pov = np.maximum(-z_base, 0) * cell_area
         slc_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
         
         return slc_pov
@@ -211,13 +211,12 @@ class SLCCalculator:
     def _calculate_density_correction(
         self, 
         thickness: DataArray, 
-        dx: float, 
-        k: float
+        cell_area: float, 
     ) -> DataArray:
         """Calculate density correction for floating ice."""
         v_den = thickness * (
             self.rho_ice / self.rho_water - self.rho_ice / self.rho_ocean
-        ) * dx**2 / k**2
+        ) * cell_area
         
         slc_den = -(v_den - v_den.isel(time=0)) / self.ocean_area
         
@@ -247,12 +246,12 @@ class SLCCalculator:
         validate_input_data(thickness, z_base)
             
         thickness = thickness.fillna(0)
-        dx, k = self._get_pixel_parameters(thickness)
+        cell_area = self._get_grid_cell_area(thickness)
         
         components = {
-            "af": self._calculate_volume_above_floatation(thickness, z_base, dx, k),
-            "pov": self._calculate_potential_ocean_volume(z_base, dx, k), 
-            "density": self._calculate_density_correction(thickness, dx, k),
+            "af": self._calculate_volume_above_floatation(thickness, z_base, cell_area),
+            "pov": self._calculate_potential_ocean_volume(z_base, cell_area), 
+            "density": self._calculate_density_correction(thickness, cell_area),
         }
         
         components["total"] = sum(components.values())
