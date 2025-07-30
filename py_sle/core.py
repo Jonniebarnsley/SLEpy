@@ -1,9 +1,8 @@
 """
 Core sea level contribution calculations based on Goelzer et al. (2020).
 """
-
-from typing import Dict
 import numpy as np
+from typing import Dict
 from xarray import DataArray
 from dask.distributed import progress
 
@@ -29,10 +28,8 @@ class SLCCalculator:
         Density of freshwater in kg/m³
     ocean_area : float, optional
         Surface area of the ocean in m²
-    validate : bool, optional
-        Whether to validate input data
-    setup_dask : bool, optional
-        Whether to automatically set up a dask cluster with memory limits
+    show_progress : bool, optional
+        Whether to show progress bar during processing (default: False)
     dask_config : dict, optional
         Dask configuration parameters
         
@@ -47,18 +44,14 @@ class SLCCalculator:
         rho_ocean: float = None, 
         rho_water: float = None,
         ocean_area: float = None,
-        validate: bool = True,
         show_progress: bool = False,
-        setup_dask: bool = False,
         dask_config: dict = None,
     ):
         self.rho_ice = rho_ice if rho_ice is not None else DEFAULT_DENSITIES["ice"]
         self.rho_ocean = rho_ocean if rho_ocean is not None else DEFAULT_DENSITIES["ocean"] 
         self.rho_water = rho_water if rho_water is not None else DEFAULT_DENSITIES["water"]
         self.ocean_area = ocean_area if ocean_area is not None else DEFAULT_OCEAN_AREA
-        self.validate = validate
         self.show_progress = show_progress
-        self.setup_dask = setup_dask
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
         self._cluster = None
         self._client = None
@@ -73,9 +66,8 @@ class SLCCalculator:
         if self.ocean_area <= 0:
             raise ValueError("Ocean area must be positive")
             
-        # Set up dask cluster if requested
-        if self.setup_dask:
-            self._setup_dask_cluster()
+        # Always set up dask cluster
+        self._setup_dask_cluster()
             
     def _setup_dask_cluster(self):
         """Set up dask cluster for parallel computation with memory limits."""
@@ -103,8 +95,7 @@ class SLCCalculator:
         
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - clean up dask resources."""
-        if self.setup_dask:
-            self._cleanup_dask_cluster()
+        self._cleanup_dask_cluster()
         
     def calculate_slc(
         self, 
@@ -126,8 +117,8 @@ class SLCCalculator:
         xarray.DataArray
             Sea level contribution grid with dimensions (x, y, time)
         """
-        if self.validate:
-            validate_input_data(thickness, z_base)
+        # Always validate input data
+        validate_input_data(thickness, z_base)
             
         # Fill NaNs in thickness
         thickness = thickness.fillna(0)
@@ -151,21 +142,14 @@ class SLCCalculator:
         
         # Single compute step with progress tracking
         if self.show_progress:
-            print("Computing sea level contribution (all components)...")
-            
-            # Check if we're using distributed scheduler
-            try:
-                from dask.distributed import get_client
-                get_client()  # Just check if distributed scheduler is available
-                # Use distributed progress for distributed scheduler
-                slc_total = slc_total.persist()
-                progress(slc_total)  # Shows distributed progress bar
-                slc_total = slc_total.compute()
-                
-            except ValueError:
-                # No distributed scheduler available, compute without progress bar
-                print("  (No distributed scheduler detected - computing without progress bar)")
-                slc_total = slc_total.compute()
+
+            from dask.distributed import get_client
+            get_client()  # Just check if distributed scheduler is available
+            # Use distributed progress for distributed scheduler
+            slc_total = slc_total.persist()
+            progress(slc_total)  # Shows distributed progress bar
+            slc_total = slc_total.compute()
+
         else:
             # Compute without progress tracking
             slc_total = slc_total.compute()
@@ -259,8 +243,8 @@ class SLCCalculator:
         dict
             Dictionary with 'af', 'pov', 'density', and 'total' components
         """
-        if self.validate:
-            validate_input_data(thickness, z_base)
+        # Always validate input data
+        validate_input_data(thickness, z_base)
             
         thickness = thickness.fillna(0)
         dx, k = self._get_pixel_parameters(thickness)
