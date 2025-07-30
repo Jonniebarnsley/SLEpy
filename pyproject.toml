@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-sle"
+version = "1.0.0"
+description = "Python library for calculating sea level contribution from ice sheet model output"
+readme = "README.md"
+authors = [
+    {name = "Jonnie Barnsley", email = "your.email@example.com"},
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+keywords = ["sea level", "ice sheets", "climate", "glaciology"]
+dependencies = [
+    "numpy>=1.21.0",
+    "xarray>=2022.3.0",
+    "dask[distributed]>=2022.3.0",
+    "netcdf4>=1.5.0",
+    "pathlib",
+    "psutil>=5.8.0",
+]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "mypy",
+    "jupyter",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "myst-parser",
+]
+
+[project.scripts]
+goelzer-slc = "py_sle.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-username/py-sle"
+Documentation = "https://py-sle.readthedocs.io/"
+Repository = "https://github.com/your-username/py-sle.git"
+Issues = "https://github.com/your-username/py-sle/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["py_sle*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

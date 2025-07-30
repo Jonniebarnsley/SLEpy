@@ -1,0 +1,282 @@
+"""
+Core sea level contribution calculations based on Goelzer et al. (2020).
+"""
+
+from typing import Dict
+import numpy as np
+from xarray import DataArray
+
+try:
+    from dask.diagnostics import ProgressBar
+    from dask.distributed import progress
+    DASK_AVAILABLE = True
+except ImportError:
+    DASK_AVAILABLE = False
+
+from .constants import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFIG
+from .utils import validate_input_data
+
+
+class SLCCalculator:
+    """
+    Calculator for sea level contribution from ice sheet data.
+    
+    This class implements the methodology from Goelzer et al. (2020) for 
+    calculating sea level contribution from ice sheet thickness and bed 
+    elevation data.
+    
+    Parameters
+    ----------
+    rho_ice : float, optional
+        Density of ice in kg/m³
+    rho_ocean : float, optional  
+        Density of seawater in kg/m³
+    rho_water : float, optional
+        Density of freshwater in kg/m³
+    ocean_area : float, optional
+        Surface area of the ocean in m²
+    validate : bool, optional
+        Whether to validate input data
+    setup_dask : bool, optional
+        Whether to automatically set up a dask cluster with memory limits
+    dask_config : dict, optional
+        Dask configuration parameters
+        
+    References
+    ----------
+    Goelzer et al. (2020): https://doi.org/10.5194/tc-14-833-2020
+    """
+    
+    def __init__(
+        self,
+        rho_ice: float = None,
+        rho_ocean: float = None, 
+        rho_water: float = None,
+        ocean_area: float = None,
+        validate: bool = True,
+        show_progress: bool = False,
+        setup_dask: bool = False,
+        dask_config: dict = None,
+    ):
+        self.rho_ice = rho_ice if rho_ice is not None else DEFAULT_DENSITIES["ice"]
+        self.rho_ocean = rho_ocean if rho_ocean is not None else DEFAULT_DENSITIES["ocean"] 
+        self.rho_water = rho_water if rho_water is not None else DEFAULT_DENSITIES["water"]
+        self.ocean_area = ocean_area if ocean_area is not None else DEFAULT_OCEAN_AREA
+        self.validate = validate
+        self.show_progress = show_progress
+        self.setup_dask = setup_dask
+        self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
+        self._cluster = None
+        self._client = None
+        
+        # Validate parameters
+        if self.rho_ice <= 0:
+            raise ValueError("Ice density must be positive")
+        if self.rho_ocean <= 0:
+            raise ValueError("Ocean density must be positive")
+        if self.rho_water <= 0:
+            raise ValueError("Water density must be positive")
+        if self.ocean_area <= 0:
+            raise ValueError("Ocean area must be positive")
+            
+        # Set up dask cluster if requested
+        if self.setup_dask:
+            self._setup_dask_cluster()
+            
+    def _setup_dask_cluster(self):
+        """Set up dask cluster for parallel computation with memory limits."""
+        try:
+            from dask.distributed import get_client
+            self._client = get_client()
+        except ValueError:
+            from dask.distributed import Client, LocalCluster
+            self._cluster = LocalCluster(**self.dask_config)
+            self._client = Client(self._cluster)
+            
+    def _cleanup_dask_cluster(self):
+        """Clean up dask cluster resources."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+            
+        if self._cluster is not None:
+            self._cluster.close()
+            self._cluster = None
+            
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - clean up dask resources."""
+        if self.setup_dask:
+            self._cleanup_dask_cluster()
+        
+    def calculate_slc(
+        self, 
+        thickness: DataArray, 
+        z_base: DataArray
+    ) -> DataArray:
+        """
+        Calculate sea level contribution from ice thickness and bed elevation.
+        
+        Parameters
+        ----------
+        thickness : xarray.DataArray
+            Ice sheet thickness with dimensions (x, y, time)
+        z_base : xarray.DataArray  
+            Bed elevation with dimensions (x, y, time)
+            
+        Returns
+        -------
+        xarray.DataArray
+            Sea level contribution grid with dimensions (x, y, time)
+        """
+        if self.validate:
+            validate_input_data(thickness, z_base)
+            
+        # Fill NaNs in thickness
+        thickness = thickness.fillna(0)
+        
+        # Get pixel area parameters
+        dx, k = self._get_pixel_parameters(thickness)
+        
+        # Calculate all components lazily (no intermediate compute calls)
+        slc_af = self._calculate_volume_above_floatation(thickness, z_base, dx, k)
+        slc_pov = self._calculate_potential_ocean_volume(z_base, dx, k)
+        slc_den = self._calculate_density_correction(thickness, dx, k)
+        
+        # Sum all components together (still lazy computation)
+        slc_total = slc_af + slc_pov + slc_den
+        slc_total.name = "slc"
+        slc_total.attrs.update({
+            "long_name": "Sea level contribution",
+            "units": "m",
+            "methodology": "Goelzer et al. (2020)",
+        })
+        
+        # Single compute step with progress tracking
+        if self.show_progress and DASK_AVAILABLE:
+            
+            # Check if we're using distributed scheduler
+            try:
+                from dask.distributed import get_client
+                get_client()  # Just check if distributed scheduler is available
+                # Use distributed progress for distributed scheduler
+                slc_total = slc_total.persist()
+                progress(slc_total)  # Shows distributed progress bar
+                slc_total = slc_total.compute()
+                
+            except ValueError:
+                # Use ProgressBar for threaded/synchronous scheduler
+                with ProgressBar():
+                    slc_total = slc_total.compute()
+        else:
+            # Compute without progress tracking
+            slc_total = slc_total.compute()
+        
+        return slc_total
+        
+    def _get_pixel_parameters(self, thickness: DataArray) -> tuple[float, float]:
+        """Get pixel width and area scale factor."""
+        x = thickness.x
+        
+        # Handle single pixel case
+        if len(x) < 2:
+            dx = 1.0  # Default pixel spacing for single pixel
+        else:
+            dx = float(x[1] - x[0])  # Assumes regularly spaced grid
+        
+        # Import here to avoid circular imports
+        from .utils import scale_factor
+        k = scale_factor(thickness, sgn=-1)  # Antarctic
+        
+        return dx, k
+        
+    def _calculate_volume_above_floatation(
+        self, 
+        thickness: DataArray, 
+        z_base: DataArray, 
+        dx: float, 
+        k: float
+    ) -> DataArray:
+        """Calculate sea level contribution from volume above floatation."""
+        # Use standard vectorized calculation (relies on dask for chunking)
+        grounded_mask = (thickness > -z_base * self.rho_ocean / self.rho_ice)
+        grounded_thickness = thickness.where(grounded_mask).fillna(0)
+        grounded_z_base = z_base.where(grounded_mask).fillna(0)
+        
+        # Volume above floatation
+        v_af = (
+            grounded_thickness + 
+            np.minimum(grounded_z_base, 0) * self.rho_ocean / self.rho_ice
+        ) * dx**2 / k**2
+        
+        # Sea level contribution (relative to first time step)
+        slc_af = -(v_af - v_af.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
+        
+        return slc_af
+        
+    def _calculate_potential_ocean_volume(
+        self, 
+        z_base: DataArray, 
+        dx: float, 
+        k: float
+    ) -> DataArray:
+        """Calculate sea level contribution from potential ocean volume."""
+        v_pov = np.maximum(-z_base, 0) * dx**2 / k**2
+        slc_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
+        
+        return slc_pov
+        
+    def _calculate_density_correction(
+        self, 
+        thickness: DataArray, 
+        dx: float, 
+        k: float
+    ) -> DataArray:
+        """Calculate density correction for floating ice."""
+        v_den = thickness * (
+            self.rho_ice / self.rho_water - self.rho_ice / self.rho_ocean
+        ) * dx**2 / k**2
+        
+        slc_den = -(v_den - v_den.isel(time=0)) / self.ocean_area
+        
+        return slc_den
+        
+    def calculate_components(
+        self, 
+        thickness: DataArray, 
+        z_base: DataArray
+    ) -> Dict[str, DataArray]:
+        """
+        Calculate individual SLC components separately.
+        
+        Parameters
+        ----------
+        thickness : xarray.DataArray
+            Ice sheet thickness
+        z_base : xarray.DataArray
+            Bed elevation
+            
+        Returns
+        -------
+        dict
+            Dictionary with 'af', 'pov', 'density', and 'total' components
+        """
+        if self.validate:
+            validate_input_data(thickness, z_base)
+            
+        thickness = thickness.fillna(0)
+        dx, k = self._get_pixel_parameters(thickness)
+        
+        components = {
+            "af": self._calculate_volume_above_floatation(thickness, z_base, dx, k),
+            "pov": self._calculate_potential_ocean_volume(z_base, dx, k), 
+            "density": self._calculate_density_correction(thickness, dx, k),
+        }
+        
+        components["total"] = sum(components.values())
+        components["total"].name = "slc_total"
+        
+        return components
