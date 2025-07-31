@@ -151,11 +151,6 @@ Examples:
         type=str,
         help="Override basin mask variable name (default: basin)"
     )
-    varnames_group.add_argument(
-        "--time-var",
-        type=str,
-        help="Override time variable name (default: time)"
-    )
     
     return parser
 
@@ -217,8 +212,6 @@ def main(args=None):
         varnames["grounded_fraction"] = args.grounded_fraction_var
     if args.basin_var:
         varnames["basin"] = args.basin_var
-    if args.time_var:
-        varnames["time"] = args.time_var
     
     # Pass None if no custom names provided (will use all defaults)
     varnames = varnames if varnames else None

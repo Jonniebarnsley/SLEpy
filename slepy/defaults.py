@@ -37,5 +37,4 @@ DEFAULT_VARNAMES = {
     "bed_elevation": "Z_base", 
     "grounded_fraction": "grounded_fraction",
     "basin": "basin",
-    "time": "time",
 }

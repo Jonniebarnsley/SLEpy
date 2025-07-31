@@ -78,7 +78,8 @@ By default, the library expects specific variable names in your netCDF files. Ho
 - `Z_base`: Bed elevation 
 - `grounded_fraction`: Grounded fraction (0=floating, 1=grounded)
 - `basin`: Basin mask for regional analysis
-- `time`: Time dimension
+
+**Note:** The time dimension must be named `time` - this cannot be customized.
 
 #### Python API
 
@@ -105,8 +106,7 @@ slepy data/ data/ output.nc \
     --thickness-var ice_thickness \
     --bed-elevation-var bedrock_elevation \
     --grounded-fraction-var gl_mask \
-    --basin-var drainage_basins \
-    --time-var t
+    --basin-var drainage_basins
 ```
 
 ### Using Grounded Fraction Data
