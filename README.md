@@ -1,6 +1,6 @@
-# slepy: Python Library for Sea Level Contribution Calculations
+# SLEpy: Python Library for Sea Level Equivalent Calculations
 
-A Python library for calculating sea level contribution from ice sheet model output using the methodology from Goelzer et al. (2020).
+A Python library for calculating sea level equivalent from ice sheet model output using the methodology from Goelzer et al. (2020).
 
 ## Installation
 
@@ -8,23 +8,14 @@ A Python library for calculating sea level contribution from ice sheet model out
 
 ```bash
 # Clone the repository
-git clone https://github.com/Jonniebarnsley/slepy.git
-cd slepy
+git clone https://github.com/Jonniebarnsley/SLEpy.git
+cd SLEpy
 
 # Create and activate virtual environment
 python -m venv slepy-env
 source slepy-env/bin/activate  # On Windows: slepy-env\Scripts\activate
 
 # Install slepy and dependencies
-pip install -e .
-```
-
-### Option 2: Direct Installation
-
-```bash
-# Install from source
-git clone https://github.com/Jonniebarnsley/slepy.git
-cd slepy
 pip install -e .
 ```
 
@@ -51,15 +42,15 @@ slepy thickness/ z_base/ output.nc --no-progress
 ### Python API
 
 ```python
-import slepy
+from slepy import SLECalculator, EnsembleProcessor
 from pathlib import Path
 
-# Simple calculation with chunk progress
-calculator = slepy.SLECalculator(show_progress=True)
-sle_grid = calculator.calculate_sle(thickness_data, z_base_data)
+# Simple calculation with proper resource management
+with SLECalculator() as calculator:
+    sle_grid = calculator.calculate_sle(thickness_data, z_base_data)
 
 # Ensemble processing with context manager and progress bars
-with slepy.EnsembleProcessor(parallel=True, show_progress=True) as processor:
+with EnsembleProcessor() as processor:
     results = processor.process_ensemble(
         thickness_dir=Path("thickness/"),
         z_base_dir=Path("z_base/"),
@@ -68,8 +59,12 @@ with slepy.EnsembleProcessor(parallel=True, show_progress=True) as processor:
     
     processor.save_results(results, "ensemble_sle.nc")
 
-# Disable progress bars for batch processing
-processor = slepy.EnsembleProcessor(parallel=True, show_progress=False)
+# For batch processing without progress bars
+with slepy.EnsembleProcessor(quiet=True) as processor:
+    results = processor.process_ensemble(
+        thickness_dir=Path("thickness/"),
+        z_base_dir=Path("z_base/")
+    )
 ```
 
 ## Advanced Usage
@@ -95,8 +90,8 @@ custom_varnames = {
 }
 
 # Use with EnsembleProcessor
-processor = py_sle.EnsembleProcessor(varnames=custom_varnames)
-results = processor.process_ensemble(thickness_dir="data/", z_base_dir="data/")
+with EnsembleProcessor(varnames=custom_varnames) as processor:
+    results = processor.process_ensemble(thickness_dir="data/", z_base_dir="data/")
 ```
 
 #### Command Line Interface
@@ -127,21 +122,21 @@ import xarray as xr
 grounded_frac = xr.open_dataarray("grounded_fraction.nc")
 
 # Use with SLECalculator
-calculator = slepy.SLECalculator()
-sle_grid = calculator.calculate_sle(
-    thickness=thickness_data, 
-    z_base=z_base_data,
-    grounded_fraction=grounded_frac
-)
+with slepy.SLECalculator() as calculator:
+    sle_grid = calculator.calculate_sle(
+        thickness=thickness_data, 
+        z_base=z_base_data,
+        grounded_fraction=grounded_frac
+    )
 
 # Use with EnsembleProcessor - grounded fraction files should be in a directory
 # with the same naming pattern as thickness/z_base files
-processor = slepy.EnsembleProcessor()
-results = processor.process_ensemble(
-    thickness_dir="thickness/",
-    z_base_dir="z_base/", 
-    grounded_fraction_dir="grounded_fraction/"
-)
+with slepy.EnsembleProcessor() as processor:
+    results = processor.process_ensemble(
+        thickness_dir="thickness/",
+        z_base_dir="z_base/", 
+        grounded_fraction_dir="grounded_fraction/"
+    )
 ```
 
 #### Command Line Interface
@@ -162,13 +157,6 @@ slepy thickness/ z_base/ output.nc \
 - **Dimensions**: Must match thickness and z_base data (x, y, time)
 - **File naming**: For ensemble processing, files should follow the same naming pattern as thickness/z_base files
 - **Variable name**: Default is `grounded_fraction`, but can be customized
-
-## API Reference
-
-### Core Classes
-
-- `SLECalculator`: Core sea level contribution calculations
-- `EnsembleProcessor`: Batch processing for multiple model runs
 
 ## Methodology
 

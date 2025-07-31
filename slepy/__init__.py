@@ -11,7 +11,7 @@ __author__ = "Jonnie Barnsley"
 from .core import SLECalculator
 from .ensemble import EnsembleProcessor
 from .utils import check_alignment, check_dims, scale_factor, prepare_chunked_data, load_areacell, load_grounded_fraction
-from .constants import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA
+from .defaults import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA
 
 __all__ = [
     "SLECalculator",

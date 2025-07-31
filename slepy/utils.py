@@ -9,7 +9,7 @@ from typing import Set, Literal
 from math import pi
 from numpy.typing import ArrayLike
 
-from .constants import REQUIRED_DIMS
+from .defaults import REQUIRED_DIMS
 
 
 def check_alignment(da1: DataArray, da2: DataArray) -> None:
@@ -363,7 +363,7 @@ def prepare_chunked_data(
         return da
         
     if chunks is None:
-        from .constants import DEFAULT_CHUNKS
+        from .defaults import DEFAULT_CHUNKS
         chunks = {**DEFAULT_CHUNKS["spatial"], **DEFAULT_CHUNKS["temporal"]}
     
     return da.chunk(chunks)
