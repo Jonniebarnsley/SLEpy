@@ -69,7 +69,11 @@ def xy2ll(
     sgn: Literal[1, -1],
     *args,
 ) -> tuple[ArrayLike, ArrayLike]:
-    """Convert x y arrays to lat long arrays.
+    """
+    Courtesy of NSIDC scripts: https://github.com/nsidc/nsidc0756-scripts.git
+    Thank you Hannah and Trey.
+
+    Convert x y arrays to lat long arrays.
 
     Converts Polar  Stereographic (X, Y) coordinates for the polar regions to
     latitude and longitude Stereographic (X, Y) coordinates for the polar
@@ -219,6 +223,64 @@ def validate_input_data(thickness: DataArray, z_base: DataArray) -> None:
         
     if np.abs(z_base).max() > 10000:  # 10km seems reasonable for bed elevation
         raise ValueError("Extreme bed elevation values found (>10km)")
+
+
+def load_areacell(areacell_file: str) -> DataArray:
+    """
+    Load grid cell area from netCDF file.
+    
+    Parameters
+    ----------
+    areacell_file : str
+        Path to netCDF file containing grid cell areas
+        
+    Returns
+    -------
+    xarray.DataArray
+        Grid cell areas in m²
+        
+    Raises
+    ------
+    ValueError
+        If areacell file cannot be loaded or has wrong dimensions
+    """
+    import xarray as xr
+    from pathlib import Path
+    
+    areacell_path = Path(areacell_file)
+    if not areacell_path.exists():
+        raise ValueError(f"Areacell file not found: {areacell_file}")
+    
+    try:
+        with xr.open_dataset(areacell_file) as ds:
+            # Try common variable names for area
+            area_vars = ['areacell', 'area', 'cell_area', 'grid_area']
+            areacell = None
+            
+            for var in area_vars:
+                if var in ds:
+                    areacell = ds[var].load()
+                    break
+            
+            if areacell is None:
+                # If no standard names, take the first data variable
+                data_vars = list(ds.data_vars)
+                if len(data_vars) == 0:
+                    raise ValueError("No data variables found in areacell file")
+                areacell = ds[data_vars[0]].load()
+                
+            # Check that it has spatial dimensions
+            required_spatial_dims = {'x', 'y'}
+            if not required_spatial_dims.issubset(set(areacell.dims)):
+                raise ValueError(
+                    f"Areacell must have dimensions {required_spatial_dims}. "
+                    f"Found: {set(areacell.dims)}"
+                )
+                
+            return areacell
+            
+    except Exception as e:
+        raise ValueError(f"Error loading areacell file: {e}")
 
 
 def prepare_chunked_data(

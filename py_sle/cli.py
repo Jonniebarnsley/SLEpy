@@ -23,6 +23,9 @@ Examples:
   # With basin mask
   goelzer-slc thickness/ z_base/ output.nc --mask basins.nc
   
+  # With custom area file
+  goelzer-slc thickness/ z_base/ output.nc --areacell areas.nc
+  
   # Custom parameters
   goelzer-slc thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
         """,
@@ -50,6 +53,11 @@ Examples:
         "--mask",
         type=str,
         help="Basin mask netCDF file for regional analysis"
+    )
+    parser.add_argument(
+        "--areacell",
+        type=str,
+        help="Grid cell area netCDF file (bypasses automatic area calculation)"
     )
     parser.add_argument(
         "--overwrite",
@@ -123,6 +131,7 @@ def main(args=None):
     z_base_dir = Path(args.z_base_dir)
     output_file = Path(args.output_file)
     mask_file = Path(args.mask) if args.mask else None
+    areacell_file = Path(args.areacell) if args.areacell else None
     
     if not thickness_dir.exists():
         print(f"Error: Thickness directory not found: {thickness_dir}")
@@ -136,9 +145,23 @@ def main(args=None):
         print(f"Error: Mask file not found: {mask_file}")
         sys.exit(1)
         
+    if areacell_file and not areacell_file.exists():
+        print(f"Error: Areacell file not found: {areacell_file}")
+        sys.exit(1)
+        
     if output_file.suffix != ".nc":
         print("Error: Output file must have .nc extension")
         sys.exit(1)
+    
+    # Load areacell if provided
+    areacell = None
+    if areacell_file:
+        try:
+            from .utils import load_areacell
+            areacell = load_areacell(str(areacell_file))
+        except ValueError as e:
+            print(f"Error loading areacell file: {e}")
+            sys.exit(1)
     
     # Create calculator with custom parameters
     calculator = SLCCalculator(
@@ -147,6 +170,7 @@ def main(args=None):
         rho_water=args.rho_water,
         ocean_area=args.ocean_area,
         quiet=args.quiet,
+        areacell=areacell,
     )
     
     # Configure dask
@@ -171,6 +195,8 @@ def main(args=None):
                 print(f"Z_base dir: {z_base_dir}")
                 if mask_file:
                     print(f"Basin mask: {mask_file}")
+                if areacell_file:
+                    print(f"Areacell file: {areacell_file}")
                 print(f"Output: {output_file}")
                 print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
             

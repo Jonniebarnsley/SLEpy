@@ -10,7 +10,7 @@ __author__ = "Jonnie Barnsley"
 
 from .core import SLCCalculator
 from .ensemble import EnsembleProcessor
-from .utils import check_alignment, check_dims, scale_factor, prepare_chunked_data
+from .utils import check_alignment, check_dims, scale_factor, prepare_chunked_data, load_areacell
 from .constants import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA
 
 __all__ = [
@@ -20,7 +20,7 @@ __all__ = [
     "check_dims",
     "scale_factor",
     "prepare_chunked_data",
-    "scale_factor",
+    "load_areacell",
     "DEFAULT_DENSITIES",
     "DEFAULT_OCEAN_AREA",
 ]

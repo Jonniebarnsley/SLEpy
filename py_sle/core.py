@@ -30,6 +30,8 @@ class SLCCalculator:
         Surface area of the ocean in m²
     quiet : bool, optional
         Whether to suppress all output and progress bars (default: False)
+    areacell : xarray.DataArray, optional
+        Pre-calculated grid cell areas in m². If provided, bypasses automatic area calculation
     dask_config : dict, optional
         Dask configuration parameters
         
@@ -46,6 +48,7 @@ class SLCCalculator:
         ocean_area: float = None,
         quiet: bool = False,
         dask_config: dict = None,
+        areacell: DataArray = None,
     ):
         self.rho_ice = rho_ice if rho_ice is not None else DEFAULT_DENSITIES["ice"]
         self.rho_ocean = rho_ocean if rho_ocean is not None else DEFAULT_DENSITIES["ocean"] 
@@ -53,6 +56,7 @@ class SLCCalculator:
         self.ocean_area = ocean_area if ocean_area is not None else DEFAULT_OCEAN_AREA
         self.quiet = quiet
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
+        self.areacell = areacell  # Pre-calculated area values
         self._cluster = None
         self._client = None
         
@@ -123,8 +127,11 @@ class SLCCalculator:
         # Fill NaNs in thickness
         thickness = thickness.fillna(0)
         
-        # Get grid cell area - assumes even gridded data on South Polar Steregraphic grid
-        areacell = self._calculate_areacell(thickness)
+        # Get grid cell area - use provided areacell or calculate it
+        if self.areacell is not None:
+            areacell = self.areacell
+        else:
+            areacell = self._calculate_areacell(thickness)
         
         # Calculate all components lazily (no intermediate compute calls)
         slc_af = self._calculate_volume_above_floatation(thickness, z_base, areacell)
@@ -246,7 +253,12 @@ class SLCCalculator:
         validate_input_data(thickness, z_base)
             
         thickness = thickness.fillna(0)
-        cell_area = self._calculate_areacell(thickness)
+        
+        # Get grid cell area - use provided areacell or calculate it
+        if self.areacell is not None:
+            cell_area = self.areacell
+        else:
+            cell_area = self._calculate_areacell(thickness)
         
         components = {
             "af": self._calculate_volume_above_floatation(thickness, z_base, cell_area),
