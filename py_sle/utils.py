@@ -283,6 +283,71 @@ def load_areacell(areacell_file: str) -> DataArray:
         raise ValueError(f"Error loading areacell file: {e}")
 
 
+def load_grounded_fraction(grounded_fraction_file: str) -> DataArray:
+    """
+    Load grounded fraction from netCDF file.
+    
+    Parameters
+    ----------
+    grounded_fraction_file : str
+        Path to netCDF file containing grounded fractions
+        
+    Returns
+    -------
+    xarray.DataArray
+        Grounded fractions (0=floating, 1=grounded)
+        
+    Raises
+    ------
+    ValueError
+        If grounded fraction file cannot be loaded or has wrong dimensions
+    """
+    import xarray as xr
+    from pathlib import Path
+    
+    grounded_path = Path(grounded_fraction_file)
+    if not grounded_path.exists():
+        raise ValueError(f"Grounded fraction file not found: {grounded_fraction_file}")
+    
+    try:
+        with xr.open_dataset(grounded_fraction_file) as ds:
+            # Try common variable names for grounded fraction
+            fraction_vars = ['grounded_fraction', 'grounded', 'groundedmask', 'mask', 'gf']
+            grounded_fraction = None
+            
+            for var in fraction_vars:
+                if var in ds:
+                    grounded_fraction = ds[var].load()
+                    break
+            
+            if grounded_fraction is None:
+                # If no standard names, take the first data variable
+                data_vars = list(ds.data_vars)
+                if len(data_vars) == 0:
+                    raise ValueError("No data variables found in grounded fraction file")
+                grounded_fraction = ds[data_vars[0]].load()
+                
+            # Check that it has required dimensions
+            required_dims = {'x', 'y'}
+            if not required_dims.issubset(set(grounded_fraction.dims)):
+                raise ValueError(
+                    f"Grounded fraction must have dimensions {required_dims}. "
+                    f"Found: {set(grounded_fraction.dims)}"
+                )
+            
+            # Validate range (should be between 0 and 1)
+            if grounded_fraction.min() < 0 or grounded_fraction.max() > 1:
+                raise ValueError(
+                    f"Grounded fraction values must be between 0 and 1. "
+                    f"Found range: {grounded_fraction.min():.3f} to {grounded_fraction.max():.3f}"
+                )
+                
+            return grounded_fraction
+            
+    except Exception as e:
+        raise ValueError(f"Error loading grounded fraction file: {e}")
+
+
 def prepare_chunked_data(
     da: DataArray, 
     chunks: dict = None,

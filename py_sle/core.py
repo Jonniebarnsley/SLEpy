@@ -61,7 +61,7 @@ class SLCCalculator:
         self._client = None
         
         # Validate parameters
-        if self.rho_ice <= 0:
+        if self.rho_ice <= 0:                            
             raise ValueError("Ice density must be positive")
         if self.rho_ocean <= 0:
             raise ValueError("Ocean density must be positive")
@@ -104,7 +104,8 @@ class SLCCalculator:
     def calculate_slc(
         self, 
         thickness: DataArray, 
-        z_base: DataArray
+        z_base: DataArray,
+        grounded_fraction: DataArray = None,
     ) -> DataArray:
         """
         Calculate sea level contribution from ice thickness and bed elevation.
@@ -115,6 +116,9 @@ class SLCCalculator:
             Ice sheet thickness with dimensions (x, y, time)
         z_base : xarray.DataArray  
             Bed elevation with dimensions (x, y, time)
+        grounded_fraction : xarray.DataArray, optional
+            Pre-calculated grounded fractions (0=floating, 1=grounded). If provided, 
+            bypasses automatic floatation criteria calculation. Values should be between 0 and 1.
             
         Returns
         -------
@@ -134,7 +138,7 @@ class SLCCalculator:
             areacell = self._calculate_areacell(thickness)
         
         # Calculate all components lazily (no intermediate compute calls)
-        slc_af = self._calculate_volume_above_floatation(thickness, z_base, areacell)
+        slc_af = self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction)
         slc_pov = self._calculate_potential_ocean_volume(z_base, areacell)
         slc_den = self._calculate_density_correction(thickness, areacell)
         
@@ -177,40 +181,48 @@ class SLCCalculator:
         k = scale_factor(thickness, sgn=-1)  # sgn=-1 -> South Polar Stereographic
         
         # Grid cell area (now a DataArray)
-        cell_area = dx**2 / k**2
+        areacell = dx**2 / k**2
         
-        return cell_area
+        return areacell
         
     def _calculate_volume_above_floatation(
         self, 
         thickness: DataArray, 
         z_base: DataArray, 
-        cell_area: DataArray, 
+        areacell: DataArray,
+        grounded_fraction: DataArray = None,
     ) -> DataArray:
         """Calculate sea level contribution from volume above floatation."""
-        # Use standard vectorized calculation (relies on dask for chunking)
-        grounded_mask = (thickness > -z_base * self.rho_ocean / self.rho_ice)
-        grounded_thickness = thickness.where(grounded_mask).fillna(0)
-        grounded_z_base = z_base.where(grounded_mask).fillna(0)
         
-        # Volume above floatation
-        v_af = (
-            grounded_thickness + 
-            np.minimum(grounded_z_base, 0) * self.rho_ocean / self.rho_ice
-        ) * cell_area
+        # Get grounded fraction - use provided values or calculate from floatation criteria
+        if grounded_fraction is not None:
+            grounded_frac = grounded_fraction
+        else:
+            # Calculate grounded fraction from floatation criteria (binary: 0 or 1)
+            grounded_frac = (thickness > -z_base * self.rho_ocean / self.rho_ice).astype(float)
+        
+        # Calculate volume above floatation for all points
+        # This includes both grounded and floating areas
+        v_af_total = (
+            thickness + 
+            np.minimum(z_base, 0) * self.rho_ocean / self.rho_ice
+        ) * areacell
+        
+        # Weight by grounded fraction (0 for floating, 1 for grounded, fractional for mixed)
+        v_af_grounded = v_af_total * grounded_frac
         
         # Sea level contribution (relative to first time step)
-        slc_af = -(v_af - v_af.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
+        slc_af = -(v_af_grounded - v_af_grounded.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
         
         return slc_af
         
     def _calculate_potential_ocean_volume(
         self, 
         z_base: DataArray, 
-        cell_area: DataArray, 
+        areacell: DataArray, 
     ) -> DataArray:
         """Calculate sea level contribution from potential ocean volume."""
-        v_pov = np.maximum(-z_base, 0) * cell_area
+        v_pov = np.maximum(-z_base, 0) * areacell
         slc_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
         
         return slc_pov
@@ -218,12 +230,12 @@ class SLCCalculator:
     def _calculate_density_correction(
         self, 
         thickness: DataArray, 
-        cell_area: DataArray, 
+        areacell: DataArray, 
     ) -> DataArray:
         """Calculate density correction for floating ice."""
         v_den = thickness * (
             self.rho_ice / self.rho_water - self.rho_ice / self.rho_ocean
-        ) * cell_area
+        ) * areacell
         
         slc_den = -(v_den - v_den.isel(time=0)) / self.ocean_area
         
@@ -232,7 +244,8 @@ class SLCCalculator:
     def calculate_components(
         self, 
         thickness: DataArray, 
-        z_base: DataArray
+        z_base: DataArray,
+        grounded_fraction: DataArray = None,
     ) -> Dict[str, DataArray]:
         """
         Calculate individual SLC components separately.
@@ -243,6 +256,9 @@ class SLCCalculator:
             Ice sheet thickness
         z_base : xarray.DataArray
             Bed elevation
+        grounded_fraction : xarray.DataArray, optional
+            Pre-calculated grounded fractions (0=floating, 1=grounded). If provided, 
+            bypasses automatic floatation criteria calculation. Values should be between 0 and 1.
             
         Returns
         -------
@@ -256,14 +272,14 @@ class SLCCalculator:
         
         # Get grid cell area - use provided areacell or calculate it
         if self.areacell is not None:
-            cell_area = self.areacell
+            areacell = self.areacell
         else:
-            cell_area = self._calculate_areacell(thickness)
+            areacell = self._calculate_areacell(thickness)
         
         components = {
-            "af": self._calculate_volume_above_floatation(thickness, z_base, cell_area),
-            "pov": self._calculate_potential_ocean_volume(z_base, cell_area), 
-            "density": self._calculate_density_correction(thickness, cell_area),
+            "af": self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction),
+            "pov": self._calculate_potential_ocean_volume(z_base, areacell), 
+            "density": self._calculate_density_correction(thickness, areacell),
         }
         
         components["total"] = sum(components.values())

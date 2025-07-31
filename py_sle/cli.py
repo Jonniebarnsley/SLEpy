@@ -26,6 +26,9 @@ Examples:
   # With custom area file
   goelzer-slc thickness/ z_base/ output.nc --areacell areas.nc
   
+  # With custom grounded fraction file
+  goelzer-slc thickness/ z_base/ output.nc --grounded-fraction grounded.nc
+  
   # Custom parameters
   goelzer-slc thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
         """,
@@ -58,6 +61,11 @@ Examples:
         "--areacell",
         type=str,
         help="Grid cell area netCDF file (bypasses automatic area calculation)"
+    )
+    parser.add_argument(
+        "--grounded-fraction",
+        type=str,
+        help="Grounded fraction netCDF file (bypasses automatic floatation criteria calculation)"
     )
     parser.add_argument(
         "--overwrite",
@@ -132,6 +140,7 @@ def main(args=None):
     output_file = Path(args.output_file)
     mask_file = Path(args.mask) if args.mask else None
     areacell_file = Path(args.areacell) if args.areacell else None
+    grounded_fraction_file = Path(args.grounded_fraction) if args.grounded_fraction else None
     
     if not thickness_dir.exists():
         print(f"Error: Thickness directory not found: {thickness_dir}")
@@ -149,6 +158,10 @@ def main(args=None):
         print(f"Error: Areacell file not found: {areacell_file}")
         sys.exit(1)
         
+    if grounded_fraction_file and not grounded_fraction_file.exists():
+        print(f"Error: Grounded fraction file not found: {grounded_fraction_file}")
+        sys.exit(1)
+        
     if output_file.suffix != ".nc":
         print("Error: Output file must have .nc extension")
         sys.exit(1)
@@ -161,6 +174,16 @@ def main(args=None):
             areacell = load_areacell(str(areacell_file))
         except ValueError as e:
             print(f"Error loading areacell file: {e}")
+            sys.exit(1)
+    
+    # Load grounded_fraction if provided
+    grounded_fraction = None
+    if grounded_fraction_file:
+        try:
+            from .utils import load_grounded_fraction
+            grounded_fraction = load_grounded_fraction(str(grounded_fraction_file))
+        except ValueError as e:
+            print(f"Error loading grounded fraction file: {e}")
             sys.exit(1)
     
     # Create calculator with custom parameters
@@ -197,6 +220,8 @@ def main(args=None):
                     print(f"Basin mask: {mask_file}")
                 if areacell_file:
                     print(f"Areacell file: {areacell_file}")
+                if grounded_fraction_file:
+                    print(f"Grounded fraction file: {grounded_fraction_file}")
                 print(f"Output: {output_file}")
                 print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
             
