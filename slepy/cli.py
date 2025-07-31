@@ -1,5 +1,5 @@
 """
-Command-line interface for py-sle.
+Command-line interface for slepy.
 """
 
 import argparse
@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from .ensemble import EnsembleProcessor
-from .core import SLCCalculator
+from .core import SLECalculator
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -18,19 +18,22 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Basic usage
-  goelzer-slc thickness/ z_base/ output.nc
+  slepy thickness/ z_base/ output.nc
   
   # With basin mask
-  goelzer-slc thickness/ z_base/ output.nc --mask basins.nc
+  slepy thickness/ z_base/ output.nc --mask basins.nc
   
   # With custom area file
-  goelzer-slc thickness/ z_base/ output.nc --areacell areas.nc
+  slepy thickness/ z_base/ output.nc --areacell areas.nc
   
-  # With custom grounded fraction file
-  goelzer-slc thickness/ z_base/ output.nc --grounded-fraction grounded.nc
+  # With grounded fraction directory for ensemble processing
+  slepy thickness/ z_base/ output.nc --grounded-fraction-dir grounded_fraction/
+  
+  # With custom variable names
+  slepy thickness/ z_base/ output.nc --thickness-var thk --bed-var bed
   
   # Custom parameters
-  goelzer-slc thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
+  slepy thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
         """,
     )
     
@@ -63,9 +66,9 @@ Examples:
         help="Grid cell area netCDF file (bypasses automatic area calculation)"
     )
     parser.add_argument(
-        "--grounded-fraction",
+        "--grounded-fraction-dir",
         type=str,
-        help="Grounded fraction netCDF file (bypasses automatic floatation criteria calculation)"
+        help="Directory containing grounded fraction netCDF files for ensemble processing"
     )
     parser.add_argument(
         "--overwrite",
@@ -126,6 +129,34 @@ Examples:
         help="Memory limit per worker (default: 4GB)"
     )
     
+    # Variable names
+    varnames_group = parser.add_argument_group("Variable names (optional overrides)")
+    varnames_group.add_argument(
+        "--thickness-var",
+        type=str,
+        help="Override thickness variable name (default: thickness)"
+    )
+    varnames_group.add_argument(
+        "--bed-var",
+        type=str,
+        help="Override bed elevation variable name (default: Z_base)"
+    )
+    varnames_group.add_argument(
+        "--grounded-fraction-var",
+        type=str,
+        help="Override grounded fraction variable name (default: grounded_fraction)"
+    )
+    varnames_group.add_argument(
+        "--basin-var",
+        type=str,
+        help="Override basin mask variable name (default: basin)"
+    )
+    varnames_group.add_argument(
+        "--time-var",
+        type=str,
+        help="Override time variable name (default: time)"
+    )
+    
     return parser
 
 
@@ -140,7 +171,7 @@ def main(args=None):
     output_file = Path(args.output_file)
     mask_file = Path(args.mask) if args.mask else None
     areacell_file = Path(args.areacell) if args.areacell else None
-    grounded_fraction_file = Path(args.grounded_fraction) if args.grounded_fraction else None
+    grounded_fraction_dir = Path(args.grounded_fraction_dir) if args.grounded_fraction_dir else None
     
     if not thickness_dir.exists():
         print(f"Error: Thickness directory not found: {thickness_dir}")
@@ -158,8 +189,8 @@ def main(args=None):
         print(f"Error: Areacell file not found: {areacell_file}")
         sys.exit(1)
         
-    if grounded_fraction_file and not grounded_fraction_file.exists():
-        print(f"Error: Grounded fraction file not found: {grounded_fraction_file}")
+    if grounded_fraction_dir and not grounded_fraction_dir.exists():
+        print(f"Error: Grounded fraction directory not found: {grounded_fraction_dir}")
         sys.exit(1)
         
     if output_file.suffix != ".nc":
@@ -176,18 +207,24 @@ def main(args=None):
             print(f"Error loading areacell file: {e}")
             sys.exit(1)
     
-    # Load grounded_fraction if provided
-    grounded_fraction = None
-    if grounded_fraction_file:
-        try:
-            from .utils import load_grounded_fraction
-            grounded_fraction = load_grounded_fraction(str(grounded_fraction_file))
-        except ValueError as e:
-            print(f"Error loading grounded fraction file: {e}")
-            sys.exit(1)
+    # Build partial varnames dictionary for any custom names provided
+    varnames = {}
+    if args.thickness_var:
+        varnames["thickness"] = args.thickness_var
+    if args.bed_var:
+        varnames["bed_elevation"] = args.bed_var
+    if args.grounded_fraction_var:
+        varnames["grounded_fraction"] = args.grounded_fraction_var
+    if args.basin_var:
+        varnames["basin"] = args.basin_var
+    if args.time_var:
+        varnames["time"] = args.time_var
+    
+    # Pass None if no custom names provided (will use all defaults)
+    varnames = varnames if varnames else None
     
     # Create calculator with custom parameters
-    calculator = SLCCalculator(
+    calculator = SLECalculator(
         rho_ice=args.rho_ice,
         rho_ocean=args.rho_ocean,
         rho_water=args.rho_water,
@@ -210,6 +247,7 @@ def main(args=None):
             calculator=calculator,
             dask_config=dask_config,
             quiet=args.quiet,
+            varnames=varnames,
         ) as processor:
             
             if not args.quiet:
@@ -220,16 +258,17 @@ def main(args=None):
                     print(f"Basin mask: {mask_file}")
                 if areacell_file:
                     print(f"Areacell file: {areacell_file}")
-                if grounded_fraction_file:
-                    print(f"Grounded fraction file: {grounded_fraction_file}")
+                if grounded_fraction_dir:
+                    print(f"Grounded fraction dir: {grounded_fraction_dir}")
                 print(f"Output: {output_file}")
                 print(f"Dask config: {args.workers} workers × {args.threads_per_worker} threads")
             
-            # Calculate SLC
+            # Calculate SLE
             results = processor.process_ensemble(
                 thickness_dir=thickness_dir,
                 z_base_dir=z_base_dir,
                 mask_file=mask_file,
+                grounded_fraction_dir=grounded_fraction_dir,
             )
             
             # Save results

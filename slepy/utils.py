@@ -2,6 +2,7 @@
 Utility functions for data validation and preprocessing.
 """
 import numpy as np
+import xarray as xr
 from xarray import DataArray
 from typing import Set, Literal
 
@@ -103,19 +104,9 @@ def xy2ll(
         if sgn == 1:
             delta = 45.
             slat = 70.
-            print(
-                '       '
-                ' xy2ll: creating coordinates in north polar stereographic'
-                ' (Std Latitude: 70degN Meridian: 45deg)'
-            )
         elif sgn == -1:
             delta = 0.
             slat = 71.
-            print(
-                '       '
-                ' xy2ll: creating coordinates in south polar stereographic'
-                ' (Std Latitude: 71degS Meridian: 0deg)'
-            )
         else:
             raise ValueError('sgn should be either 1 or -1')
     else:
@@ -196,7 +187,7 @@ def scale_factor(da: DataArray, sgn: int) -> DataArray:
 
 def validate_input_data(thickness: DataArray, z_base: DataArray) -> None:
     """
-    Validate input data arrays for SLC calculation.
+    Validate input data arrays for SLE calculation.
     
     Parameters
     ----------
@@ -244,7 +235,6 @@ def load_areacell(areacell_file: str) -> DataArray:
     ValueError
         If areacell file cannot be loaded or has wrong dimensions
     """
-    import xarray as xr
     from pathlib import Path
     
     areacell_path = Path(areacell_file)
@@ -302,7 +292,6 @@ def load_grounded_fraction(grounded_fraction_file: str) -> DataArray:
     ValueError
         If grounded fraction file cannot be loaded or has wrong dimensions
     """
-    import xarray as xr
     from pathlib import Path
     
     grounded_path = Path(grounded_fraction_file)

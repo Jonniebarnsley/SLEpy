@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "py-sle"
+name = "slepy"
 version = "1.0.0"
 description = "Python library for calculating sea level contribution from ice sheet model output"
 readme = "README.md"
@@ -49,17 +49,17 @@ docs = [
 ]
 
 [project.scripts]
-goelzer-slc = "py_sle.cli:main"
+slepy = "slepy.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-username/py-sle"
-Documentation = "https://py-sle.readthedocs.io/"
-Repository = "https://github.com/your-username/py-sle.git"
-Issues = "https://github.com/your-username/py-sle/issues"
+Homepage = "https://github.com/Jonniebarnsley/slepy"
+Documentation = "https://slepy.readthedocs.io/"
+Repository = "https://github.com/Jonniebarnsley/slepy.git"
+Issues = "https://github.com/Jonniebarnsley/slepy/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["py_sle*"]
+include = ["slepy*"]
 
 [tool.black]
 line-length = 88

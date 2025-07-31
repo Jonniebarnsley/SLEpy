@@ -30,3 +30,12 @@ DEFAULT_DASK_CONFIG = {
     "memory_limit": "2GB",
     "dashboard_address": None,
 }
+
+# Default variable names in netCDF files
+DEFAULT_VARNAMES = {
+    "thickness": "thickness",
+    "bed_elevation": "Z_base", 
+    "grounded_fraction": "grounded_fraction",
+    "basin": "basin",
+    "time": "time",
+}

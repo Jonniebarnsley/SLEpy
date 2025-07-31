@@ -10,7 +10,7 @@ from .constants import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFI
 from .utils import validate_input_data
 
 
-class SLCCalculator:
+class SLECalculator:
     """
     Calculator for sea level contribution from ice sheet data.
     
@@ -46,14 +46,14 @@ class SLCCalculator:
         rho_ocean: float = None, 
         rho_water: float = None,
         ocean_area: float = None,
+        areacell: DataArray = None,
         quiet: bool = False,
         dask_config: dict = None,
-        areacell: DataArray = None,
     ):
-        self.rho_ice = rho_ice if rho_ice is not None else DEFAULT_DENSITIES["ice"]
-        self.rho_ocean = rho_ocean if rho_ocean is not None else DEFAULT_DENSITIES["ocean"] 
-        self.rho_water = rho_water if rho_water is not None else DEFAULT_DENSITIES["water"]
-        self.ocean_area = ocean_area if ocean_area is not None else DEFAULT_OCEAN_AREA
+        self.rho_ice = rho_ice or DEFAULT_DENSITIES["ice"]
+        self.rho_ocean = rho_ocean or DEFAULT_DENSITIES["ocean"] 
+        self.rho_water = rho_water or DEFAULT_DENSITIES["water"]
+        self.ocean_area = ocean_area or DEFAULT_OCEAN_AREA
         self.quiet = quiet
         self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
         self.areacell = areacell  # Pre-calculated area values
@@ -101,7 +101,7 @@ class SLCCalculator:
         """Context manager exit - clean up dask resources."""
         self._cleanup_dask_cluster()
         
-    def calculate_slc(
+    def calculate_sle(
         self, 
         thickness: DataArray, 
         z_base: DataArray,
@@ -131,21 +131,22 @@ class SLCCalculator:
         # Fill NaNs in thickness
         thickness = thickness.fillna(0)
         
-        # Get grid cell area - use provided areacell or calculate it
+        # Get grid cell area - use provided areacell or calculate it for an even-gridded South Polar
+        # Stereographic projection.
         if self.areacell is not None:
             areacell = self.areacell
         else:
             areacell = self._calculate_areacell(thickness)
         
-        # Calculate all components lazily (no intermediate compute calls)
-        slc_af = self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction)
-        slc_pov = self._calculate_potential_ocean_volume(z_base, areacell)
-        slc_den = self._calculate_density_correction(thickness, areacell)
+        # Calculate all components lazily
+        sle_af = self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction)
+        sle_pov = self._calculate_potential_ocean_volume(z_base, areacell)
+        sle_den = self._calculate_density_correction(thickness, areacell)
         
         # Sum all components together (still lazy computation)
-        slc_total = slc_af + slc_pov + slc_den
-        slc_total.name = "slc"
-        slc_total.attrs.update({
+        sle = sle_af + sle_pov + sle_den
+        sle.name = "sle"
+        sle.attrs.update({
             "long_name": "Sea level contribution",
             "units": "m",
             "methodology": "Goelzer et al. (2020)",
@@ -153,21 +154,19 @@ class SLCCalculator:
         
         # Single compute step with progress tracking
         if not self.quiet:
-            from dask.distributed import get_client
-            get_client()  # Just check if distributed scheduler is available
             # Use distributed progress for distributed scheduler
-            slc_total = slc_total.persist()
-            progress(slc_total)  # Shows distributed progress bar
-            slc_total = slc_total.compute()
-
+            sle = sle.persist()
+            progress(sle)  # Shows distributed progress bar
+            sle = sle.compute()
         else:
             # Compute without output or progress tracking
-            slc_total = slc_total.compute()
+            sle = sle.compute()
         
-        return slc_total
+        return sle
         
     def _calculate_areacell(self, thickness: DataArray) -> DataArray:
-        """Get area of each grid cell in m² as a DataArray."""
+        """Get area of each grid cell in m² as a DataArray. Assumes even-gridded data and a 
+        South Polar Stereographic projection."""
         x = thickness.x
         
         # Handle single pixel case
@@ -203,19 +202,16 @@ class SLCCalculator:
         
         # Calculate volume above floatation for all points
         # This includes both grounded and floating areas
-        v_af_total = (
+        v_af = (
             thickness + 
             np.minimum(z_base, 0) * self.rho_ocean / self.rho_ice
-        ) * areacell
-        
-        # Weight by grounded fraction (0 for floating, 1 for grounded, fractional for mixed)
-        v_af_grounded = v_af_total * grounded_frac
+        ) * areacell * grounded_frac
         
         # Sea level contribution (relative to first time step)
-        slc_af = -(v_af_grounded - v_af_grounded.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
+        sle_af = -(v_af - v_af.isel(time=0)) * (self.rho_ice / self.rho_ocean) / self.ocean_area
         
-        return slc_af
-        
+        return sle_af
+
     def _calculate_potential_ocean_volume(
         self, 
         z_base: DataArray, 
@@ -223,9 +219,9 @@ class SLCCalculator:
     ) -> DataArray:
         """Calculate sea level contribution from potential ocean volume."""
         v_pov = np.maximum(-z_base, 0) * areacell
-        slc_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
+        sle_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
         
-        return slc_pov
+        return sle_pov
         
     def _calculate_density_correction(
         self, 
@@ -237,9 +233,9 @@ class SLCCalculator:
             self.rho_ice / self.rho_water - self.rho_ice / self.rho_ocean
         ) * areacell
         
-        slc_den = -(v_den - v_den.isel(time=0)) / self.ocean_area
+        sle_den = -(v_den - v_den.isel(time=0)) / self.ocean_area
         
-        return slc_den
+        return sle_den
         
     def calculate_components(
         self, 
@@ -248,7 +244,7 @@ class SLCCalculator:
         grounded_fraction: DataArray = None,
     ) -> Dict[str, DataArray]:
         """
-        Calculate individual SLC components separately.
+        Calculate individual SLE components separately.
         
         Parameters
         ----------
@@ -283,6 +279,6 @@ class SLCCalculator:
         }
         
         components["total"] = sum(components.values())
-        components["total"].name = "slc_total"
+        components["total"].name = "sle_total"
         
         return components
