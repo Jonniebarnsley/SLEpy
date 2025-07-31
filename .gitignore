@@ -189,3 +189,4 @@ dask-worker-space/
 # Development and documentation files
 PROGRESS_SIMPLIFICATION.md
 GoelzerSLC.py
+slepy-env
