@@ -4,15 +4,31 @@ A Python library for calculating sea level contribution from ice sheet model out
 
 ## Installation
 
+### Option 1: Virtual Environment (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/Jonniebarnsley/slepy.git
+cd slepy
+
+# Create and activate virtual environment
+python -m venv slepy-env
+source slepy-env/bin/activate  # On Windows: slepy-env\Scripts\activate
+
+# Install slepy and dependencies
+pip install -e .
+```
+
+### Option 2: Direct Installation
+
 ```bash
 # Install from source
 git clone https://github.com/Jonniebarnsley/slepy.git
 cd slepy
 pip install -e .
-
-# Install with development dependencies
-pip install -e ".[dev]"
 ```
+
+**Note:** After installation, the `slepy` command will be available in your terminal.
 
 ## Quick Start
 
