@@ -2,7 +2,7 @@
 Physical constants and default parameters for sea level calculations.
 """
 
-from typing import Dict, Union
+from typing import Dict
 
 # Default physical constants
 DEFAULT_DENSITIES: Dict[str, float] = {

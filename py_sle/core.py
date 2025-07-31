@@ -123,13 +123,13 @@ class SLCCalculator:
         # Fill NaNs in thickness
         thickness = thickness.fillna(0)
         
-        # Get grid cell area
-        cell_area = self._get_grid_cell_area(thickness)
+        # Get grid cell area - assumes even gridded data on South Polar Steregraphic grid
+        areacell = self._calculate_areacell(thickness)
         
         # Calculate all components lazily (no intermediate compute calls)
-        slc_af = self._calculate_volume_above_floatation(thickness, z_base, cell_area)
-        slc_pov = self._calculate_potential_ocean_volume(z_base, cell_area)
-        slc_den = self._calculate_density_correction(thickness, cell_area)
+        slc_af = self._calculate_volume_above_floatation(thickness, z_base, areacell)
+        slc_pov = self._calculate_potential_ocean_volume(z_base, areacell)
+        slc_den = self._calculate_density_correction(thickness, areacell)
         
         # Sum all components together (still lazy computation)
         slc_total = slc_af + slc_pov + slc_den
@@ -155,8 +155,8 @@ class SLCCalculator:
         
         return slc_total
         
-    def _get_grid_cell_area(self, thickness: DataArray) -> float:
-        """Get area of each grid cell in m²."""
+    def _calculate_areacell(self, thickness: DataArray) -> DataArray:
+        """Get area of each grid cell in m² as a DataArray."""
         x = thickness.x
         
         # Handle single pixel case
@@ -167,9 +167,9 @@ class SLCCalculator:
         
         # Import here to avoid circular imports
         from .utils import scale_factor
-        k = scale_factor(thickness, sgn=-1)  # Antarctic
+        k = scale_factor(thickness, sgn=-1)  # sgn=-1 -> South Polar Stereographic
         
-        # Grid cell area
+        # Grid cell area (now a DataArray)
         cell_area = dx**2 / k**2
         
         return cell_area
@@ -178,7 +178,7 @@ class SLCCalculator:
         self, 
         thickness: DataArray, 
         z_base: DataArray, 
-        cell_area: float, 
+        cell_area: DataArray, 
     ) -> DataArray:
         """Calculate sea level contribution from volume above floatation."""
         # Use standard vectorized calculation (relies on dask for chunking)
@@ -200,7 +200,7 @@ class SLCCalculator:
     def _calculate_potential_ocean_volume(
         self, 
         z_base: DataArray, 
-        cell_area: float, 
+        cell_area: DataArray, 
     ) -> DataArray:
         """Calculate sea level contribution from potential ocean volume."""
         v_pov = np.maximum(-z_base, 0) * cell_area
@@ -211,7 +211,7 @@ class SLCCalculator:
     def _calculate_density_correction(
         self, 
         thickness: DataArray, 
-        cell_area: float, 
+        cell_area: DataArray, 
     ) -> DataArray:
         """Calculate density correction for floating ice."""
         v_den = thickness * (
@@ -246,7 +246,7 @@ class SLCCalculator:
         validate_input_data(thickness, z_base)
             
         thickness = thickness.fillna(0)
-        cell_area = self._get_grid_cell_area(thickness)
+        cell_area = self._calculate_areacell(thickness)
         
         components = {
             "af": self._calculate_volume_above_floatation(thickness, z_base, cell_area),
