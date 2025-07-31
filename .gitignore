@@ -185,3 +185,7 @@ dask-worker-space/
 
 # PyCharm
 .idea/
+
+# Development and documentation files
+PROGRESS_SIMPLIFICATION.md
+GoelzerSLC.py
