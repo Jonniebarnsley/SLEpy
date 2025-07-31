@@ -2,15 +2,6 @@
 
 A Python library for calculating sea level contribution from ice sheet model output using the methodology from Goelzer et al. (2020).
 
-## Features
-
-- **High Performance**: Optimized dask-based parallelization
-- **Robust**: Memory-efficient processing with automatic resource management
-- **Flexible**: Support for both single calculations and ensemble processing
-- **Well-Tested**: Comprehensive benchmarking and validation
-- **Easy to Use**: Simple API and command-line interface
-- **Progress Tracking**: Built-in progress bars show chunk-level computation progress for both individual calculations and ensemble processing
-
 ## Installation
 
 ```bash
