@@ -6,7 +6,7 @@ from typing import Dict
 from xarray import DataArray
 from dask.distributed import progress
 
-from .defaults import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFIG
+from .config import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFIG
 from .utils import validate_input_data
 
 

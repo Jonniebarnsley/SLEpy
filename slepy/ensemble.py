@@ -11,7 +11,7 @@ from dask.distributed import Client, LocalCluster, get_client
 
 from .core import SLECalculator
 from .utils import prepare_chunked_data
-from .defaults import DEFAULT_DASK_CONFIG, DEFAULT_VARNAMES
+from .config import DEFAULT_DASK_CONFIG, DEFAULT_VARNAMES
 
 
 class EnsembleProcessor:
