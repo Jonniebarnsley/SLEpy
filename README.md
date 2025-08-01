@@ -55,19 +55,18 @@ slepy thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
 
 ```python
 from slepy import SLECalculator, EnsembleProcessor
-from pathlib import Path
 
 # Simple calculation on xarray DataArray objects
 with SLECalculator() as calc:
     sle_grid = calc.calculate_sle(thickness_da, z_base_da)
     sle = sle_grid.sum(dim=['x', 'y'])
 
-# Ensemble processing data directories (passed as pathlib Path objects)
+# Ensemble processing data directories
 with EnsembleProcessor() as processor:
     results = processor.process_ensemble(
-        thickness_dir=Path("thickness/"),
-        z_base_dir=Path("z_base/"),
-        mask_file=Path("basins.nc")
+        thickness_dir="thickness/",
+        z_base_dir="z_base/",
+        mask_file="basins.nc"
     )
     
     processor.save_results(results, "ensemble_sle.nc")

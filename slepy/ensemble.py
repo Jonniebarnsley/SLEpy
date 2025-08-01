@@ -5,7 +5,7 @@ Ensemble processing for multiple ice sheet model runs.
 import numpy as np
 import xarray as xr
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 from xarray import DataArray
 from dask.distributed import Client, LocalCluster, get_client
 
@@ -108,10 +108,10 @@ class EnsembleProcessor:
         
     def process_ensemble(
         self,
-        thickness_dir: Path,
-        z_base_dir: Path,
-        grounded_fraction_dir: Optional[Path] = None,
-        mask_file: Optional[Path] = None,
+        thickness_dir: Union[Path, str],
+        z_base_dir: Union[Path, str],
+        grounded_fraction_dir: Optional[Union[Path, str]] = None,
+        mask_file: Optional[Union[Path, str]] = None,
         chunks: dict = None,
     ) -> DataArray:
         """
@@ -119,13 +119,13 @@ class EnsembleProcessor:
         
         Parameters
         ----------
-        thickness_dir : Path
+        thickness_dir : Path or str
             Directory containing thickness netCDF files
-        z_base_dir : Path  
+        z_base_dir : Path or str  
             Directory containing bed elevation netCDF files
-        grounded_fraction_dir : Path, optional
+        grounded_fraction_dir : Path or str, optional
             Directory containing grounded fraction netCDF files
-        mask_file : Path, optional
+        mask_file : Path or str, optional
             Basin mask file for regional analysis
         chunks : dict, optional
             Custom chunk sizes for parallel computation
@@ -135,13 +135,21 @@ class EnsembleProcessor:
         xarray.DataArray
             Sea level contribution timeseries with run dimension
         """
+        # Convert string paths to Path objects
+        thickness_dir = Path(thickness_dir)
+        z_base_dir = Path(z_base_dir)
+        if grounded_fraction_dir is not None:
+            grounded_fraction_dir = Path(grounded_fraction_dir)
+        if mask_file is not None:
+            mask_file = Path(mask_file)
+            
         # Get file paths
-        thickness_files = sorted(Path(thickness_dir).glob("*.nc"))
-        z_base_files = sorted(Path(z_base_dir).glob("*.nc"))
+        thickness_files = sorted(thickness_dir.glob("*.nc"))
+        z_base_files = sorted(z_base_dir.glob("*.nc"))
         grounded_fraction_files = []
         
         if grounded_fraction_dir:
-            grounded_fraction_files = sorted(Path(grounded_fraction_dir).glob("*.nc"))
+            grounded_fraction_files = sorted(grounded_fraction_dir.glob("*.nc"))
             
         # Validate file counts
         if len(thickness_files) != len(z_base_files):
@@ -281,7 +289,7 @@ class EnsembleProcessor:
         
         return result
         
-    def save_results(self, data: DataArray, output_file: Path, overwrite: bool = False):
+    def save_results(self, data: DataArray, output_file: Union[Path, str], overwrite: bool = False):
         """
         Save results to netCDF file.
         
@@ -289,7 +297,7 @@ class EnsembleProcessor:
         ----------
         data : xarray.DataArray
             Data to save
-        output_file : Path
+        output_file : Path or str
             Output file path
         overwrite : bool, optional
             Whether to overwrite existing files
