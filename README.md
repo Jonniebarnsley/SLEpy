@@ -63,12 +63,7 @@ with SLECalculator() as calc:
 
 # Ensemble processing data directories
 with EnsembleProcessor() as processor:
-    results = processor.process_ensemble(
-        thickness_dir="thickness/",
-        z_base_dir="z_base/",
-        mask_file="basins.nc"
-    )
-    
+    results = processor.process_ensemble("thickness/", "z_base/", mask_file="basins.nc")
     processor.save_results(results, "ensemble_sle.nc")
 ```
 
