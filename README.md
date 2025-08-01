@@ -116,7 +116,7 @@ If you have pre-calculated grounded fraction data, you can use it instead of let
 import xarray as xr
 
 # Load your grounded fraction data
-grounded_frac_da = xr.open_dataarray("grounded_fraction.nc").grounded_fraction
+grounded_frac_da = xr.open_dataarray("grounded_fraction.nc")
 
 # Use with SLECalculator
 with SLECalculator() as calc:
