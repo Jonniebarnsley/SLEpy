@@ -1,6 +1,9 @@
-# SLEpy: Python Library for Sea Level Equivalent Calculations
+# SLEpy: /ˈslɛpi/
 
-A Python library for calculating sea level equivalent from ice sheet model output using the methodology from Goelzer et al. (2020).
+A Python library for calculating sea level equivalent (SLE) from ice sheet model output using the methodology from Goelzer et al. (2020). This takes into account:
+1. **Volume Above Floatation (VAF)**: Changes in ice volume above the floatation thickness
+2. **Potential Ocean Volume (POV)**: Changes in bed topography due to solid Earth rebound
+3. **Density Correction**: Accounting for density differences between fresh and saline water.
 
 ## Installation
 
@@ -23,6 +26,19 @@ pip install -e .
 
 ## Quick Start
 
+SLEpy provides tools for calculating sea level equivalent both for a single model run and for model ensembles. It requires netcdf data for ice thickness with dimensions `(x, y, time)` and bed elevation with dimensions `(x, y)` or `(x, y, time)`. The ensemble processor assumes a directory structure similar to:
+```
+data/
+├── thickness/
+│   ├── run01_thickness.nc
+│   ├── run02_thickness.nc
+|   └── ...
+└── z_base/
+    ├── run01_Z_base.nc
+    ├── run02_Z_base.nc
+    └── ...
+```
+
 ### Command Line Interface
 
 ```bash
@@ -34,9 +50,6 @@ slepy thickness/ z_base/ output.nc --mask basins.nc
 
 # Custom parameters
 slepy thickness/ z_base/ output.nc --rho-ice 917 --rho-ocean 1025
-
-# Disable progress bar for batch processing
-slepy thickness/ z_base/ output.nc --no-progress
 ```
 
 ### Python API
@@ -45,26 +58,20 @@ slepy thickness/ z_base/ output.nc --no-progress
 from slepy import SLECalculator, EnsembleProcessor
 from pathlib import Path
 
-# Simple calculation with proper resource management
-with SLECalculator() as calculator:
-    sle_grid = calculator.calculate_sle(thickness_data, z_base_data)
+# Simple calculation on xarray DataArray objects
+with SLECalculator() as calc:
+    sle_grid = calc.calculate_sle(thickness_da, z_base_da)
+    sle = sle_grid.sum(dim=['x', 'y'])
 
-# Ensemble processing with context manager and progress bars
+# Ensemble processing data directories (passed as pathlib Path objects)
 with EnsembleProcessor() as processor:
     results = processor.process_ensemble(
         thickness_dir=Path("thickness/"),
         z_base_dir=Path("z_base/"),
-        mask_file=Path("basin_mask.nc")
+        mask_file=Path("basins.nc")
     )
     
     processor.save_results(results, "ensemble_sle.nc")
-
-# For batch processing without progress bars
-with slepy.EnsembleProcessor(quiet=True) as processor:
-    results = processor.process_ensemble(
-        thickness_dir=Path("thickness/"),
-        z_base_dir=Path("z_base/")
-    )
 ```
 
 ## Advanced Usage
@@ -79,12 +86,10 @@ By default, the library expects specific variable names in your netCDF files. Ho
 - `grounded_fraction`: Grounded fraction (0=floating, 1=grounded)
 - `basin`: Basin mask for regional analysis
 
-**Note:** The time dimension must be named `time` - this cannot be customized.
-
 #### Python API
 
 ```python
-# Define custom variable names (partial override)
+# Define custom variable names
 custom_varnames = {
     'thickness': 'thk',
     'bed_elevation': 'bed'
@@ -92,26 +97,25 @@ custom_varnames = {
 
 # Use with EnsembleProcessor
 with EnsembleProcessor(varnames=custom_varnames) as processor:
-    results = processor.process_ensemble(thickness_dir="data/", z_base_dir="data/")
+    results = processor.process_ensemble(thickness_dir="thickness/", z_base_dir="z_base/")
 ```
 
 #### Command Line Interface
 
 ```bash
 # Override specific variable names
-slepy data/ data/ output.nc --thickness-var thk --bed-elevation-var bed
+slepy data/ data/ output.nc --thickness-var thk
 
 # Multiple overrides
 slepy data/ data/ output.nc \
     --thickness-var ice_thickness \
     --bed-elevation-var bedrock_elevation \
-    --grounded-fraction-var gl_mask \
     --basin-var drainage_basins
 ```
 
 ### Using Grounded Fraction Data
 
-If you have pre-calculated grounded fraction data, you can use it instead of letting the library calculate it from floatation criteria:
+If you have pre-calculated grounded fraction data, you can use it instead of letting the library calculate it using the floatation criteria:
 
 #### Python API
 
@@ -119,19 +123,19 @@ If you have pre-calculated grounded fraction data, you can use it instead of let
 import xarray as xr
 
 # Load your grounded fraction data
-grounded_frac = xr.open_dataarray("grounded_fraction.nc").grounded_fraction
+grounded_frac_da = xr.open_dataarray("grounded_fraction.nc").grounded_fraction
 
 # Use with SLECalculator
-with slepy.SLECalculator() as calculator:
-    sle_grid = calculator.calculate_sle(
-        thickness=thickness_data, 
-        z_base=z_base_data,
-        grounded_fraction=grounded_frac
+with SLECalculator() as calc:
+    sle_grid = calc.calculate_sle(
+        thickness=thickness_da, 
+        z_base=z_base_da,
+        grounded_fraction=grounded_frac_da
     )
 
 # Use with EnsembleProcessor - grounded fraction files should be in a directory
 # with the same naming pattern as thickness/z_base files
-with slepy.EnsembleProcessor() as processor:
+with EnsembleProcessor() as processor:
     results = processor.process_ensemble(
         thickness_dir="thickness/",
         z_base_dir="z_base/", 
@@ -157,14 +161,6 @@ slepy thickness/ z_base/ output.nc \
 - **Dimensions**: Must match thickness and z_base data (x, y, time)
 - **File naming**: For ensemble processing, files should follow the same naming pattern as thickness/z_base files
 - **Variable name**: Default is `grounded_fraction`, but can be customized
-
-## Methodology
-
-Based on Goelzer et al. (2020) methodology calculating three components:
-
-1. **Volume Above Floatation (VAF)**: Changes in grounded ice volume
-2. **Potential Ocean Volume (POV)**: Changes in bed topography below sea level
-3. **Density Correction**: Accounting for floating ice density differences
 
 ## Requirements
 
