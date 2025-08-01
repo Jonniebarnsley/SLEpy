@@ -1,9 +1,8 @@
-# SLEpy: /ˈslɛpi/
+# SLEpy
 
-A Python library for calculating sea level equivalent (SLE) from ice sheet model output using the methodology from Goelzer et al. (2020). This takes into account:
-1. **Volume Above Floatation (VAF)**: Changes in ice volume above the floatation thickness
-2. **Potential Ocean Volume (POV)**: Changes in bed topography due to solid Earth rebound
-3. **Density Correction**: Accounting for density differences between fresh and saline water.
+*/ˈslɛpi/*
+
+A Python library for calculating sea level equivalent (SLE) from ice sheet model output using the methodology from Goelzer et al. (2020).
 
 ## Installation
 
