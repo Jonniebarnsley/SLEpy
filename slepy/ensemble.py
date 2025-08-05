@@ -203,10 +203,9 @@ class EnsembleProcessor:
         if not self.quiet:
             print(f"Completed processing {len(timeseries)} ensemble runs")
             
-        # Combine into ensemble
+        # Combine into ensemble with aligned time dimensions
         run_labels = range(1, len(timeseries) + 1)
-        ensemble = xr.concat(timeseries, dim="run")
-        ensemble = ensemble.assign_coords(run=run_labels)
+        ensemble = self._align_and_concat_timeseries(timeseries, run_labels)
         
         return ensemble
         
@@ -288,6 +287,45 @@ class EnsembleProcessor:
         result = result.assign_coords(basin=basin_ids)
         
         return result
+        
+    def _align_and_concat_timeseries(self, timeseries, run_labels):
+        """
+        Align time dimensions and concatenate timeseries with different time lengths.
+        
+        This method creates a union of all time coordinates and reindexes each
+        timeseries to this common time grid, filling missing values with NaN.
+        
+        Parameters
+        ----------
+        timeseries_list : list of xarray.DataArray
+            List of timeseries DataArrays with potentially different time dimensions
+        run_labels : range or list
+            Labels for the run dimension
+            
+        Returns
+        -------
+        xarray.DataArray
+            Concatenated timeseries with aligned time dimensions
+        """
+            
+        # Get all unique time coordinates
+        times = np.array([])
+        for ts in timeseries:
+            times = np.append(times, ts.time.values)
+        unique_times = sorted(np.unique(times))
+        
+        # Reindex each timeseries to the union time grid
+        aligned_timeseries = []
+        for ts in timeseries:
+            # Reindex to union time coordinates, filling missing values with NaN
+            aligned_ts = ts.reindex(time=unique_times, fill_value=np.nan)
+            aligned_timeseries.append(aligned_ts)
+        
+        # Now concatenate along run dimension
+        ensemble = xr.concat(aligned_timeseries, dim="run")
+        ensemble = ensemble.assign_coords(run=run_labels)
+        
+        return ensemble
         
     def save_results(self, data: DataArray, output_file: Union[Path, str], overwrite: bool = False):
         """
