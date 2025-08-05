@@ -2,29 +2,22 @@
 
 */ˈslɛpi/*
 
-A Python library for calculating sea level equivalent (SLE) from ice sheet model output using the methodology from Goelzer et al. (2020).
+A Python library for calculating sea level equivalent (SLE) from ice sheet model output using the methodology from [Goelzer et al. (2020)](https://doi.org/10.5194/tc-14-833-2020).
 
 ## Installation
 
-### Option 1: Virtual Environment (Recommended)
-
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/Jonniebarnsley/SLEpy.git
 cd SLEpy
 
-# (Optional) Customize defaults by editing config.yaml
-# Edit config.yaml to set your preferred defaults for:
-# - Physical constants (ice/ocean/water densities)
-# - Variable names in your netCDF files  
-# - Dask parallel processing settings
-# - Chunk sizes for optimal performance
+# 2. (Optional) Customize defaults by editing config.yaml
 
-# Create and activate virtual environment
+# 3. Create and activate virtual environment
 python -m venv slepy-env
 source slepy-env/bin/activate  # On Windows: slepy-env\Scripts\activate
 
-# Install slepy and dependencies
+# 4. Install slepy and dependencies
 pip install -e .
 ```
 
