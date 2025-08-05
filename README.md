@@ -8,8 +8,8 @@ A Python library for calculating sea level equivalent (SLE) from ice sheet model
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Jonniebarnsley/SLEpy.git
-cd SLEpy
+git clone https://github.com/Jonniebarnsley/slepy.git
+cd slepy
 
 # 2. (Optional) Customize defaults by editing config.yaml
 
@@ -25,7 +25,7 @@ pip install -e .
 
 ## Quick Start
 
-SLEpy provides tools for calculating sea level equivalent both for a single model run and for model ensembles. It requires netcdf data for ice thickness with dimensions `(x, y, time)` and bed elevation with dimensions `(x, y)` or `(x, y, time)`. The ensemble processor assumes a directory structure similar to:
+slepy provides tools for calculating sea level equivalent both for a single model run and for model ensembles. It requires netcdf data for ice thickness with dimensions `(x, y, time)` and bed elevation with dimensions `(x, y)` or `(x, y, time)`. The ensemble processor assumes a directory structure similar to:
 ```
 data/
 ├── thickness/
