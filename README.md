@@ -1,4 +1,4 @@
-# SLEpy
+# slepy
 
 */ˈslɛpi/*
 
