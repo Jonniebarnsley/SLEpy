@@ -8,8 +8,8 @@ A Python library for calculating sea level equivalent (SLE) from ice sheet model
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Jonniebarnsley/slepy.git
-cd slepy
+git clone https://github.com/Jonniebarnsley/slepy.git slepy-project
+cd slepy-project
 
 # 2. (Optional) Customize defaults by editing config.yaml
 
