@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "slepy"
 version = "1.0.0"
-description = "Python library for calculating sea level contribution from ice sheet model output"
+description = "Python library for calculating sea level equivalent from ice sheet model output"
 readme = "README.md"
 authors = [
-    {name = "Jonnie Barnsley", email = "your.email@example.com"},
+    {name = "Jonnie Barnsley", email = "jonathan.barnsley@kcl.ac.uk"},
 ]
 license = {text = "MIT"}
 classifiers = [
