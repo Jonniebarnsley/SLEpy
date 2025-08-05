@@ -69,7 +69,7 @@ _CONFIG = load_config()
 
 # Export the same interface as the old defaults.py
 DEFAULT_DENSITIES: Dict[str, float] = _CONFIG["densities"]
-DEFAULT_OCEAN_AREA: float = _CONFIG["ocean_area"]
+DEFAULT_OCEAN_AREA: float = float(_CONFIG["ocean_area"])  # Ensure it's parsed as float
 REQUIRED_DIMS = {"x", "y", "time"}  # This shouldn't be configurable
 DEFAULT_CHUNKS = _CONFIG["chunks"] 
 DEFAULT_DASK_CONFIG = _CONFIG["dask"]
