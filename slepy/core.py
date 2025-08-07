@@ -2,11 +2,13 @@
 Core sea level contribution calculations based on Goelzer et al. (2020).
 """
 import numpy as np
-from typing import Dict
+import xarray as xr
+from pathlib import Path
+from typing import Optional
 from xarray import DataArray
 from dask.distributed import progress
 
-from .config import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA, DEFAULT_DASK_CONFIG
+from .config import DENSITIES, OCEAN_AREA, VARNAMES, DASK_CONFIG, CHUNKS
 from .utils import validate_input_data
 
 
@@ -42,21 +44,24 @@ class SLECalculator:
     
     def __init__(
         self,
-        rho_ice: float = None,
-        rho_ocean: float = None, 
-        rho_water: float = None,
-        ocean_area: float = None,
-        areacell: DataArray = None,
+        areacell: Optional[DataArray] = None, 
         quiet: bool = False,
-        dask_config: dict = None,
+        show_memory: bool = False,
     ):
-        self.rho_ice = rho_ice or DEFAULT_DENSITIES["ice"]
-        self.rho_ocean = rho_ocean or DEFAULT_DENSITIES["ocean"] 
-        self.rho_water = rho_water or DEFAULT_DENSITIES["water"]
-        self.ocean_area = ocean_area or DEFAULT_OCEAN_AREA
-        self.quiet = quiet
-        self.dask_config = dask_config or DEFAULT_DASK_CONFIG.copy()
-        self.areacell = areacell  # Pre-calculated area values
+        self.areacell = areacell    # Pre-calculated area values
+        self.quiet = quiet          # Suppress output and progress bars
+        self.show_memory = show_memory  # Show memory usage during processing
+
+        # Get parameters from config
+        self.rho_ice = DENSITIES["ice"]
+        self.rho_ocean = DENSITIES["ocean"] 
+        self.rho_water = DENSITIES["water"]
+        self.ocean_area = OCEAN_AREA
+        self.varnames = VARNAMES
+        self.dask_config = DASK_CONFIG
+        self.chunks = CHUNKS
+
+        # Dask cluster and client
         self._cluster = None
         self._client = None
         
@@ -83,7 +88,14 @@ class SLECalculator:
             self._cluster = LocalCluster(**self.dask_config)
             self._client = Client(self._cluster)
             
-    def _cleanup_dask_cluster(self):
+        # Print dashboard URL for memory monitoring
+        if not self.quiet and self._client:
+            dashboard_link = self._client.dashboard_link
+            if dashboard_link:
+                print(f"📊 Dask dashboard available at: {dashboard_link}")
+                print("   Use this to monitor memory usage and task progress in real-time")
+            
+    def close(self):
         """Clean up dask cluster resources."""
         if self._client is not None:
             self._client.close()
@@ -92,20 +104,21 @@ class SLECalculator:
         if self._cluster is not None:
             self._cluster.close()
             self._cluster = None
-            
+
     def __enter__(self):
         """Context manager entry."""
         return self
         
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - clean up dask resources."""
-        self._cleanup_dask_cluster()
+        self.close()
         
     def calculate_sle(
         self, 
         thickness: DataArray, 
         z_base: DataArray,
-        grounded_fraction: DataArray = None,
+        grounded_fraction: Optional[DataArray] = None,
+        sum: bool = True,
     ) -> DataArray:
         """
         Calculate sea level contribution from ice thickness and bed elevation.
@@ -139,7 +152,8 @@ class SLECalculator:
             areacell = self._calculate_areacell(thickness)
         
         # Calculate all components lazily
-        sle_af = self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction)
+        sle_af = self._calculate_volume_above_floatation(
+            thickness, z_base, areacell, grounded_fraction)
         sle_pov = self._calculate_potential_ocean_volume(z_base, areacell)
         sle_den = self._calculate_density_correction(thickness, areacell)
         
@@ -162,8 +176,201 @@ class SLECalculator:
             # Compute without output or progress tracking
             sle = sle.compute()
         
+        if sum:
+            return sle.sum(dim=["x", "y"])  # Sum over spatial dimensions
         return sle
+
+    def process_ensemble(
+            self,
+            thickness_dir: str|Path,
+            z_base_dir: str|Path,
+            grounded_fraction_dir: Optional[str|Path] = None,
+            basins_file: Optional[str|Path] = None,
+    ):
+        """
+        Apply calculate_sle to an ensemble of ice sheet model runs.
+
+        Parameters
+        ----------
+        thickness_dir : str|Path
+            Directory containing ice sheet thickness netCDF files
+        z_base_dir : str|Path
+            Directory containing bed elevation netCDF files
+        grounded_fraction_dir : Optional[str|Path]
+            Directory containing grounded fraction netCDF files for ensemble processing
+        basins_file : Optional[str|Path]
+            Basin mask netCDF file for regional SLE timeseries
+
+        Returns
+        -------
+        xarray.DataArray
+            Ensemble sea level contribution timeseries with dimensions (run, time[, basin])
         
+        """
+        # Convert all strings to paths
+        thickness_dir = Path(thickness_dir)
+        z_base_dir = Path(z_base_dir)
+        if grounded_fraction_dir is not None:
+            grounded_fraction_dir = Path(grounded_fraction_dir)
+        if basins_file is not None:
+            basins_file = Path(basins_file)
+
+        thk_files, zb_files, gf_files = self._validate_files(
+            thickness_dir, z_base_dir, grounded_fraction_dir
+            )
+
+        # load basin mask into memory
+        basins = self._load_basins(basins_file) if basins_file else None
+
+        timeseries = []
+        for i, (thk_file, zb_file) in enumerate(zip(thk_files, zb_files)):
+            gf_file = gf_files[i] if gf_files else None
+
+            # Print progress if not quiet
+            if not self.quiet:
+                print(f"Processing ensemble run {i+1}/{len(thk_files)}: {thk_file.stem}")
+            
+            # Show memory usage if requested
+            if self.show_memory:
+                self._print_memory_usage(f"Before run {i+1}")
+            
+            thk, zb, gf = self._load_run_data(thk_file, zb_file, gf_file)
+            # Calculate sea level contribution
+            sle_grid = self.calculate_sle(thk, zb, gf, sum=False)
+
+            # Before summing over spatial dimensions, apply basin mask (if provided)
+            if basins is not None:
+                ts = sle_grid.groupby(basins).sum(dim=["x", "y"])
+            else:
+                ts = sle_grid.sum(dim=["x", "y"])
+            timeseries.append(ts.compute())
+            
+            # Show memory usage after processing
+            if self.show_memory:
+                self._print_memory_usage(f"After run {i+1}")
+                print()  # Add spacing
+
+        # Print final status
+        if not self.quiet:
+            print(f"Completed processing {len(timeseries)} ensemble runs")
+            
+        # Combine into ensemble with aligned time dimensions
+        run_labels = range(1, len(timeseries) + 1)
+        ensemble = self._align_and_concat_timeseries(timeseries, run_labels)
+        
+        return ensemble
+    
+    def _align_and_concat_timeseries(self, timeseries, run_labels):
+        """
+        Align time dimensions and concatenate timeseries with different time lengths.
+        
+        This method creates a union of all time coordinates and reindexes each
+        timeseries to this common time grid, filling missing values with NaN.
+        
+        Parameters
+        ----------
+        timeseries_list : list of xarray.DataArray
+            List of timeseries DataArrays with potentially different time dimensions
+        run_labels : range or list
+            Labels for the run dimension
+            
+        Returns
+        -------
+        xarray.DataArray
+            Concatenated timeseries with aligned time dimensions
+        """
+            
+        # Get all unique time coordinates
+        times = np.array([])
+        for ts in timeseries:
+            times = np.append(times, ts.time.values)
+        unique_times = sorted(np.unique(times))
+        
+        # Reindex each timeseries to the union time grid
+        aligned_timeseries = []
+        for ts in timeseries:
+            # Reindex to union time coordinates, filling missing values with NaN
+            aligned_ts = ts.reindex(time=unique_times, fill_value=np.nan)
+            aligned_timeseries.append(aligned_ts)
+        
+        # Now concatenate along run dimension
+        ensemble = xr.concat(aligned_timeseries, dim="run")
+        ensemble = ensemble.assign_coords(run=run_labels)
+        
+        return ensemble
+
+    def _load_run_data(
+            self,
+            thickness_file: str|Path,
+            z_base_file: str|Path,
+            grounded_fraction_file: Optional[str|Path] = None,
+    ):
+        """
+        Loads thickness, bed elevation, and optionally grounded fraction data for a single run,
+        using specified variable names and chunking from config.
+        """
+        
+        # Load data
+        thickness_ds = xr.open_dataset(thickness_file, engine="netcdf4")
+        z_base_ds = xr.open_dataset(z_base_file, engine="netcdf4")
+
+        thickness = thickness_ds[self.varnames["thickness"]]
+        z_base = z_base_ds[self.varnames["bed_elevation"]]
+
+        # Chunk data for parallel processing
+        thickness = thickness.chunk(self.chunks)
+        z_base = z_base.chunk(self.chunks)
+
+        if grounded_fraction_file:
+            grounded_fraction_ds = xr.open_dataset(grounded_fraction_file, engine="netcdf4")
+            grounded_fraction = grounded_fraction_ds[self.varnames["grounded_fraction"]]
+            grounded_fraction = grounded_fraction.chunk(self.chunks)
+            return thickness, z_base, grounded_fraction
+        
+        return thickness, z_base, None
+
+    def _load_basins(self, mask_file: Path) -> DataArray:
+        """Load basin mask for regional analysis."""
+        with xr.open_dataset(mask_file) as ds:
+            basins = ds[self.varnames["basin"]]
+            return basins.load()
+
+    def _validate_files(
+        self,
+        thickness_dir: Path,
+        z_base_dir: Path,
+        grounded_fraction_dir: Optional[Path] = None,
+    ):
+
+        # Validate directories exist
+        if not thickness_dir.is_dir():
+            raise ValueError(f"Thickness directory does not exist: {thickness_dir}")
+        if not z_base_dir.is_dir():
+            raise ValueError(f"Bed elevation directory does not exist: {z_base_dir}")
+        if grounded_fraction_dir and not grounded_fraction_dir.is_dir():
+            raise ValueError(f"Grounded fraction directory does not exist: {grounded_fraction_dir}")
+        
+        # Get all files in directories
+        thickness_files = sorted(thickness_dir.glob("*.nc"))
+        z_base_files = sorted(z_base_dir.glob("*.nc"))
+        grounded_fraction_files = []
+        if grounded_fraction_dir:
+            grounded_fraction_files = sorted(grounded_fraction_dir.glob("*.nc"))
+
+        # Validate file counts match
+        if len(thickness_files) != len(z_base_files):
+            raise ValueError(
+                f"Mismatched number of files: {len(thickness_files)} thickness, "
+                f"{len(z_base_files)} z_base files"
+        )
+        if grounded_fraction_files and len(grounded_fraction_files) != len(thickness_files):
+            raise ValueError(
+                f"Mismatched number of files: {len(thickness_files)} thickness, "
+                f"{len(grounded_fraction_files)} grounded fraction files"
+                )
+        
+        return thickness_files, z_base_files, grounded_fraction_files
+
     def _calculate_areacell(self, thickness: DataArray) -> DataArray:
         """Get area of each grid cell in m² as a DataArray. Assumes even-gridded data and a 
         South Polar Stereographic projection."""
@@ -189,7 +396,7 @@ class SLECalculator:
         thickness: DataArray, 
         z_base: DataArray, 
         areacell: DataArray,
-        grounded_fraction: DataArray = None,
+        grounded_fraction: Optional[DataArray] = None,
     ) -> DataArray:
         """Calculate sea level contribution from volume above floatation."""
         
@@ -218,7 +425,7 @@ class SLECalculator:
         areacell: DataArray, 
     ) -> DataArray:
         """Calculate sea level contribution from potential ocean volume."""
-        v_pov = np.maximum(-z_base, 0) * areacell
+        v_pov = (-z_base).clip(min=0) * areacell
         sle_pov = -(v_pov - v_pov.isel(time=0)) / self.ocean_area
         
         return sle_pov
@@ -237,48 +444,44 @@ class SLECalculator:
         
         return sle_den
         
-    def calculate_components(
-        self, 
-        thickness: DataArray, 
-        z_base: DataArray,
-        grounded_fraction: DataArray = None,
-    ) -> Dict[str, DataArray]:
-        """
-        Calculate individual SLE components separately.
-        
-        Parameters
-        ----------
-        thickness : xarray.DataArray
-            Ice sheet thickness
-        z_base : xarray.DataArray
-            Bed elevation
-        grounded_fraction : xarray.DataArray, optional
-            Pre-calculated grounded fractions (0=floating, 1=grounded). If provided, 
-            bypasses automatic floatation criteria calculation. Values should be between 0 and 1.
+    def _print_memory_usage(self, context: str = ""):
+        """Print current memory usage statistics."""
+        try:
+            import psutil
             
-        Returns
-        -------
-        dict
-            Dictionary with 'af', 'pov', 'density', and 'total' components
-        """
-        # Always validate input data
-        validate_input_data(thickness, z_base)
+            # Get process memory info
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
             
-        thickness = thickness.fillna(0)
-        
-        # Get grid cell area - use provided areacell or calculate it
-        if self.areacell is not None:
-            areacell = self.areacell
-        else:
-            areacell = self._calculate_areacell(thickness)
-        
-        components = {
-            "af": self._calculate_volume_above_floatation(thickness, z_base, areacell, grounded_fraction),
-            "pov": self._calculate_potential_ocean_volume(z_base, areacell), 
-            "density": self._calculate_density_correction(thickness, areacell),
-        }
-        
-        components["total"] = sum(components.values())
-        components["total"].name = "sle_total"
-        
-        return components
+            # Get system memory info
+            sys_memory = psutil.virtual_memory()
+            sys_total_gb = sys_memory.total / 1024 / 1024 / 1024
+            sys_used_gb = sys_memory.used / 1024 / 1024 / 1024
+            sys_percent = sys_memory.percent
+            
+            print(f"💾 Memory Usage {context}:")
+            print(f"   Process: {memory_mb:.1f} MB")
+            print(f"   System: {sys_used_gb:.1f}/{sys_total_gb:.1f} GB ({sys_percent:.1f}%)")
+            
+            # Get dask cluster memory if available
+            if self._client:
+                try:
+                    # Get worker info
+                    worker_info = self._client.scheduler_info()['workers']
+                    if worker_info:
+                        total_dask_memory = 0
+                        for worker_id, worker_data in worker_info.items():
+                            worker_memory = worker_data.get('memory_limit', 0)
+                            total_dask_memory += worker_memory
+                        
+                        if total_dask_memory > 0:
+                            dask_memory_gb = total_dask_memory / 1024 / 1024 / 1024
+                            print(f"   Dask workers: {dask_memory_gb:.1f} GB limit")
+                except Exception:
+                    pass  # Silently ignore dask memory errors
+                    
+        except ImportError:
+            print("💾 Memory monitoring requires psutil: pip install psutil")
+        except Exception as e:
+            print(f"💾 Memory monitoring error: {e}")

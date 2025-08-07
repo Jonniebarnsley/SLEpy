@@ -13,11 +13,9 @@ ocean_area: 3.625e14
 
 # Default chunk sizes for parallel processing (optimized for 8-core systems)
 chunks:
-  spatial:
-    x: 192
-    y: 192
-  temporal:
-    time: 98
+  x: 192
+  y: 192
+  time: 98
 
 # Dask worker configuration
 dask:

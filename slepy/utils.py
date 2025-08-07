@@ -3,6 +3,7 @@ Utility functions for data validation and preprocessing.
 """
 import numpy as np
 import xarray as xr
+from pathlib import Path
 from xarray import DataArray
 from typing import Set, Literal
 
@@ -215,8 +216,22 @@ def validate_input_data(thickness: DataArray, z_base: DataArray) -> None:
     if np.abs(z_base).max() > 10000:  # 10km seems reasonable for bed elevation
         raise ValueError("Extreme bed elevation values found (>10km)")
 
+def validate_and_queue_files(thickness_files: list, z_base_files: list, grounded_fraction_files: list) -> None:
+    """Ensures that the number of files for thickness, z_base, and grounded fraction match."""
+    if len(thickness_files) != len(z_base_files):
+        raise ValueError(
+            f"Mismatched number of files: {len(thickness_files)} thickness, "
+            f"{len(z_base_files)} z_base files"
+        )
+        
+    if grounded_fraction_files and len(grounded_fraction_files) != len(thickness_files):
+        raise ValueError(
+            f"Mismatched number of files: {len(thickness_files)} thickness, "
+            f"{len(grounded_fraction_files)} grounded fraction files"
+            )
+    return
 
-def load_areacell(areacell_file: str) -> DataArray:
+def load_areacell(areacell_file: Path) -> DataArray:
     """
     Load grid cell area from netCDF file.
     
@@ -235,42 +250,29 @@ def load_areacell(areacell_file: str) -> DataArray:
     ValueError
         If areacell file cannot be loaded or has wrong dimensions
     """
-    from pathlib import Path
+    from .config import VARNAMES
     
-    areacell_path = Path(areacell_file)
-    if not areacell_path.exists():
-        raise ValueError(f"Areacell file not found: {areacell_file}")
+    if not areacell_file.exists():
+        raise FileNotFoundError(f"Areacell file not found: {areacell_file}")
     
-    try:
-        with xr.open_dataset(areacell_file) as ds:
-            # Try common variable names for area
-            area_vars = ['areacell', 'area', 'cell_area', 'grid_area']
-            areacell = None
-            
-            for var in area_vars:
-                if var in ds:
-                    areacell = ds[var].load()
-                    break
-            
-            if areacell is None:
-                # If no standard names, take the first data variable
-                data_vars = list(ds.data_vars)
-                if len(data_vars) == 0:
-                    raise ValueError("No data variables found in areacell file")
-                areacell = ds[data_vars[0]].load()
-                
-            # Check that it has spatial dimensions
-            required_spatial_dims = {'x', 'y'}
-            if not required_spatial_dims.issubset(set(areacell.dims)):
-                raise ValueError(
-                    f"Areacell must have dimensions {required_spatial_dims}. "
-                    f"Found: {set(areacell.dims)}"
-                )
-                
-            return areacell
-            
-    except Exception as e:
-        raise ValueError(f"Error loading areacell file: {e}")
+    with xr.open_dataset(areacell_file) as ds:
+        # First try the configured variable name
+        configured_var = VARNAMES["cell_area"]
+        if configured_var in ds:
+            areacell = ds[configured_var].load()
+        else:
+            raise KeyError(
+                f"Areacell variable '{configured_var}' not found in {areacell_file}. "
+                "Consider changing cell_area variable name in slepy config."
+            )
+        # Check that it has spatial dimensions
+        required_spatial_dims = {'x', 'y'}
+        if not required_spatial_dims.issubset(set(areacell.dims)):
+            raise ValueError(
+                f"Areacell must have dimensions {required_spatial_dims}. "
+                f"Found: {set(areacell.dims)}"
+            )
+        return areacell
 
 
 def load_grounded_fraction(grounded_fraction_file: str) -> DataArray:
@@ -293,77 +295,35 @@ def load_grounded_fraction(grounded_fraction_file: str) -> DataArray:
         If grounded fraction file cannot be loaded or has wrong dimensions
     """
     from pathlib import Path
+    from .config import VARNAMES
     
     grounded_path = Path(grounded_fraction_file)
     if not grounded_path.exists():
         raise ValueError(f"Grounded fraction file not found: {grounded_fraction_file}")
     
-    try:
-        with xr.open_dataset(grounded_fraction_file) as ds:
-            # Try common variable names for grounded fraction
-            fraction_vars = ['grounded_fraction', 'grounded', 'groundedmask', 'mask', 'gf']
-            grounded_fraction = None
+    with xr.open_dataset(grounded_fraction_file) as ds:
+        configured_var = VARNAMES["grounded_fraction"]
+        if configured_var in ds:
+            grounded_fraction = ds[configured_var].load()
+        else:
+            raise KeyError(
+                f"Grounded fraction variable '{configured_var}' not found in {grounded_fraction_file}. "
+                "Consider changing grounded_fraction variable name in slepy config."
+            )
             
-            for var in fraction_vars:
-                if var in ds:
-                    grounded_fraction = ds[var].load()
-                    break
-            
-            if grounded_fraction is None:
-                # If no standard names, take the first data variable
-                data_vars = list(ds.data_vars)
-                if len(data_vars) == 0:
-                    raise ValueError("No data variables found in grounded fraction file")
-                grounded_fraction = ds[data_vars[0]].load()
-                
-            # Check that it has required dimensions
-            required_dims = {'x', 'y'}
-            if not required_dims.issubset(set(grounded_fraction.dims)):
-                raise ValueError(
-                    f"Grounded fraction must have dimensions {required_dims}. "
-                    f"Found: {set(grounded_fraction.dims)}"
-                )
-            
-            # Validate range (should be between 0 and 1)
-            if grounded_fraction.min() < 0 or grounded_fraction.max() > 1:
-                raise ValueError(
-                    f"Grounded fraction values must be between 0 and 1. "
-                    f"Found range: {grounded_fraction.min():.3f} to {grounded_fraction.max():.3f}"
-                )
-                
-            return grounded_fraction
-            
-    except Exception as e:
-        raise ValueError(f"Error loading grounded fraction file: {e}")
-
-
-def prepare_chunked_data(
-    da: DataArray, 
-    chunks: dict = None,
-    parallel: bool = True
-) -> DataArray:
-    """
-    Prepare DataArray with optimal chunking for parallel computation.
-    
-    Parameters
-    ----------
-    da : xarray.DataArray
-        Input DataArray
-    chunks : dict, optional
-        Chunk sizes. If None, uses optimized defaults
-    parallel : bool, optional
-        Whether to apply chunking for parallel computation
+        # Check that it has required dimensions
+        required_dims = {'x', 'y', 'time'}
+        if not required_dims.issubset(set(grounded_fraction.dims)):
+            raise ValueError(
+                f"Grounded fraction must have dimensions {required_dims}. "
+                f"Found: {set(grounded_fraction.dims)}"
+            )
         
-    Returns
-    -------
-    xarray.DataArray
-        Chunked DataArray ready for parallel computation
-    """
-    if not parallel:
-        return da
-        
-    if chunks is None:
-        from .config import DEFAULT_CHUNKS
-        chunks = {**DEFAULT_CHUNKS["spatial"], **DEFAULT_CHUNKS["temporal"]}
-    
-    return da.chunk(chunks)
+        # Validate range (should be between 0 and 1)
+        if grounded_fraction.min() < 0 or grounded_fraction.max() > 1:
+            raise ValueError(
+                f"Grounded fraction values must be between 0 and 1. "
+                f"Found range: {grounded_fraction.min():.3f} to {grounded_fraction.max():.3f}"
+            )
+            
+        return grounded_fraction

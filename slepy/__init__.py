@@ -9,19 +9,16 @@ __version__ = "1.0.0"
 __author__ = "Jonnie Barnsley"
 
 from .core import SLECalculator
-from .ensemble import EnsembleProcessor
-from .utils import check_alignment, check_dims, scale_factor, prepare_chunked_data, load_areacell, load_grounded_fraction
-from .config import DEFAULT_DENSITIES, DEFAULT_OCEAN_AREA
+from .utils import check_alignment, check_dims, scale_factor, load_areacell, load_grounded_fraction
+from .config import DENSITIES, OCEAN_AREA
 
 __all__ = [
     "SLECalculator",
-    "EnsembleProcessor", 
     "check_alignment",
     "check_dims",
     "scale_factor",
-    "prepare_chunked_data",
     "load_areacell",
     "load_grounded_fraction",
-    "DEFAULT_DENSITIES",
-    "DEFAULT_OCEAN_AREA",
+    "DENSITIES",
+    "OCEAN_AREA",
 ]

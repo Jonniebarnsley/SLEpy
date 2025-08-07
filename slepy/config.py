@@ -35,6 +35,7 @@ def _get_hardcoded_defaults() -> Dict[str, Any]:
             "bed_elevation": "Z_base",
             "grounded_fraction": "grounded_fraction",
             "basin": "basin",
+            "cell_area": "areacell",
         }
     }
 
@@ -68,9 +69,9 @@ def load_config() -> Dict[str, Any]:
 _CONFIG = load_config()
 
 # Export the same interface as the old defaults.py
-DEFAULT_DENSITIES: Dict[str, float] = _CONFIG["densities"]
-DEFAULT_OCEAN_AREA: float = float(_CONFIG["ocean_area"])  # Ensure it's parsed as float
-REQUIRED_DIMS = {"x", "y", "time"}  # This shouldn't be configurable
-DEFAULT_CHUNKS = _CONFIG["chunks"] 
-DEFAULT_DASK_CONFIG = _CONFIG["dask"]
-DEFAULT_VARNAMES = _CONFIG["variable_names"]
+DENSITIES: Dict[str, float] = _CONFIG["densities"]
+OCEAN_AREA: float = float(_CONFIG["ocean_area"])
+REQUIRED_DIMS = {"x", "y", "time"}
+CHUNKS = _CONFIG["chunks"] 
+DASK_CONFIG = _CONFIG["dask"]
+VARNAMES = _CONFIG["variable_names"]
